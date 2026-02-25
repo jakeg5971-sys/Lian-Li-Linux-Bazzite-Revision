@@ -18,6 +18,9 @@ const deviceStore = useDeviceStore();
 const capabilities = ref<RgbDeviceCapabilities[]>([]);
 const loadingCaps = ref(false);
 
+// Live OpenRGB server status from telemetry
+const openrgbStatus = computed(() => deviceStore.telemetry.openrgb_status);
+
 // Get or create RGB config
 const rgbConfig = computed<RgbAppConfig>(
   () =>
@@ -130,14 +133,6 @@ function toggleEnabled() {
   configStore.updateRgbConfig(cfg);
 }
 
-function toggleOpenRgb() {
-  const cfg = {
-    ...rgbConfig.value,
-    openrgb_server: !rgbConfig.value.openrgb_server,
-  };
-  configStore.updateRgbConfig(cfg);
-}
-
 onMounted(loadCapabilities);
 watch(() => deviceStore.daemonConnected, (connected) => {
   if (connected) loadCapabilities();
@@ -149,20 +144,27 @@ watch(() => deviceStore.daemonConnected, (connected) => {
     <PageHeader title="RGB Effects">
       <template #actions>
         <button
+          v-if="!rgbConfig.openrgb_server"
           @click="toggleEnabled"
-          class="px-3 py-1.5 text-sm rounded-lg transition-colors"
+          class="px-3 py-1.5 text-sm rounded-lg border transition-colors cursor-pointer"
           :class="
             rgbConfig.enabled
-              ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+              ? 'bg-green-50 dark:bg-green-900/30 border-green-300 dark:border-green-700 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/50'
+              : 'bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-600'
           "
         >
           {{ rgbConfig.enabled ? "Enabled" : "Disabled" }}
         </button>
+        <span
+          v-else
+          class="px-3 py-1.5 text-sm rounded-lg border border-purple-300 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300"
+        >
+          Controlled by OpenRGB
+        </span>
         <button
           @click="loadCapabilities"
           :disabled="loadingCaps"
-          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
         >
           Refresh
         </button>
@@ -172,7 +174,7 @@ watch(() => deviceStore.daemonConnected, (connected) => {
           class="px-4 py-1.5 text-sm rounded-lg font-medium transition-colors"
           :class="
             configStore.dirty
-              ? 'bg-blue-500 text-white hover:bg-blue-600'
+              ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
               : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
           "
         >
@@ -185,7 +187,7 @@ watch(() => deviceStore.daemonConnected, (connected) => {
       {{ configStore.error }}
     </div>
 
-    <!-- OpenRGB server toggle -->
+    <!-- OpenRGB server status -->
     <div
       class="mb-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
     >
@@ -193,24 +195,47 @@ watch(() => deviceStore.daemonConnected, (connected) => {
         <div>
           <span class="text-sm font-semibold">OpenRGB SDK Server</span>
           <p class="text-xs text-gray-400 mt-0.5">
-            Expose devices to OpenRGB / SignalRGB on port
-            {{ rgbConfig.openrgb_port }}
+            Expose devices to OpenRGB / SignalRGB
+            <template v-if="openrgbStatus.port">
+              on port {{ openrgbStatus.port }}
+            </template>
           </p>
         </div>
-        <button
-          @click="toggleOpenRgb"
-          class="px-3 py-1 text-xs rounded-lg transition-colors"
-          :class="
-            rgbConfig.openrgb_server
-              ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
-          "
-        >
-          {{ rgbConfig.openrgb_server ? "Running" : "Stopped" }}
-        </button>
+        <!-- Live status indicator -->
+        <span class="flex items-center gap-1.5 text-xs">
+          <span
+            class="w-2 h-2 rounded-full"
+            :class="
+              openrgbStatus.running ? 'bg-green-500'
+              : openrgbStatus.error ? 'bg-red-500'
+              : !rgbConfig.openrgb_server ? 'bg-gray-400'
+              : 'bg-yellow-500'
+            "
+          />
+          <span :class="
+            openrgbStatus.running ? 'text-green-600 dark:text-green-400'
+            : openrgbStatus.error ? 'text-red-500'
+            : !rgbConfig.openrgb_server ? 'text-gray-500 dark:text-gray-400'
+            : 'text-yellow-600 dark:text-yellow-400'
+          ">
+            {{ openrgbStatus.running ? 'Listening' : openrgbStatus.error ? 'Error' : !rgbConfig.openrgb_server ? 'Disabled' : 'Starting...' }}
+          </span>
+        </span>
       </div>
+
+      <!-- Error message -->
       <div
-        v-if="rgbConfig.openrgb_server"
+        v-if="rgbConfig.openrgb_server && openrgbStatus.error"
+        class="mt-3 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-xs text-red-600 dark:text-red-400"
+      >
+        {{ openrgbStatus.error }}
+        <span class="text-red-400 dark:text-red-500 ml-1">
+          — Change the port in Settings.
+        </span>
+      </div>
+
+      <div
+        v-if="rgbConfig.openrgb_server && openrgbStatus.running"
         class="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700"
       >
         <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">
@@ -219,15 +244,15 @@ watch(() => deviceStore.daemonConnected, (connected) => {
         <ol class="text-xs text-gray-400 space-y-1 list-decimal list-inside">
           <li>
             Open <span class="font-medium text-gray-600 dark:text-gray-300">OpenRGB</span>
-            &rarr; Settings &rarr; <span class="font-medium text-gray-600 dark:text-gray-300">SDK Client</span>
+            &rarr; <span class="font-medium text-gray-600 dark:text-gray-300">SDK Client</span> tab
           </li>
           <li>
-            Add server: <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-mono">localhost:{{ rgbConfig.openrgb_port }}</code>
+            Add server: <code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-mono">localhost:{{ openrgbStatus.port }}</code>
           </li>
-          <li>Click Connect &mdash; your Lian Li devices will appear as controllers</li>
+          <li>Click Connect &mdash; your Lian Li devices will appear as devices</li>
         </ol>
         <p class="text-xs text-gray-400 mt-2">
-          While OpenRGB is connected, it takes priority over effects set here.
+          While OpenRGB SDK Server is enabled, effects set here will have no effect.
         </p>
       </div>
     </div>

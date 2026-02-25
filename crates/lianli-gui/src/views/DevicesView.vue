@@ -20,7 +20,7 @@ const visibleDevices = computed(() =>
       <template #actions>
         <button
           @click="deviceStore.refreshDevices()"
-          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
         >
           Refresh
         </button>

@@ -209,10 +209,18 @@ export const RGB_MODE_NAMES: Record<RgbMode, string> = {
   ColorsMorph: "Colors Morph",
 };
 
+export interface OpenRgbServerStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number | null;
+  error: string | null;
+}
+
 export interface TelemetrySnapshot {
   fan_rpms: Record<string, number[]>;
   coolant_temps: Record<string, number>;
   streaming_active: boolean;
+  openrgb_status: OpenRgbServerStatus;
 }
 
 // Helper: human-readable family names

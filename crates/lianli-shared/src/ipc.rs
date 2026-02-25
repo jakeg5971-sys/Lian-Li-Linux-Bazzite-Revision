@@ -117,6 +117,19 @@ pub struct DeviceInfo {
     pub screen_height: Option<u32>,
 }
 
+/// Status of the OpenRGB SDK server.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OpenRgbServerStatus {
+    /// Whether the server is enabled in config.
+    pub enabled: bool,
+    /// Whether the server is currently listening for connections.
+    pub running: bool,
+    /// The actual port the server bound to (may differ from configured if port was in use).
+    pub port: Option<u16>,
+    /// Error message if the server failed to start.
+    pub error: Option<String>,
+}
+
 /// Snapshot of live telemetry data, returned by GetTelemetry.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TelemetrySnapshot {
@@ -126,4 +139,7 @@ pub struct TelemetrySnapshot {
     pub coolant_temps: HashMap<String, f32>,
     /// Whether the daemon is actively streaming frames to LCD devices.
     pub streaming_active: bool,
+    /// OpenRGB SDK server status.
+    #[serde(default)]
+    pub openrgb_status: OpenRgbServerStatus,
 }

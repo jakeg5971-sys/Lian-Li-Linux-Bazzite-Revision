@@ -60,15 +60,31 @@ const COLOR_MODE_MODE_SPECIFIC: u32 = 2;
 // Zone types
 const ZONE_TYPE_LINEAR: u32 = 1;
 
+/// Shared state reported back from the server thread.
+#[derive(Debug, Clone, Default)]
+pub struct OpenRgbServerState {
+    pub running: bool,
+    pub port: Option<u16>,
+    pub error: Option<String>,
+}
+
 /// Starts the OpenRGB SDK server in a background thread.
 pub fn start_openrgb_server(
     rgb: Arc<Mutex<RgbController>>,
     port: u16,
     stop_flag: Arc<AtomicBool>,
+    state: Arc<Mutex<OpenRgbServerState>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(e) = run_server(rgb, port, stop_flag) {
+        if let Err(e) = run_server(rgb, port, &stop_flag, &state) {
             error!("OpenRGB server error: {e}");
+            let mut s = state.lock();
+            s.running = false;
+            s.error = Some(e.to_string());
+        } else {
+            let mut s = state.lock();
+            s.running = false;
+            s.error = None;
         }
     })
 }
@@ -76,35 +92,33 @@ pub fn start_openrgb_server(
 fn run_server(
     rgb: Arc<Mutex<RgbController>>,
     port: u16,
-    stop_flag: Arc<AtomicBool>,
+    stop_flag: &Arc<AtomicBool>,
+    state: &Arc<Mutex<OpenRgbServerState>>,
 ) -> anyhow::Result<()> {
-    // Try the configured port, then up to 4 subsequent ports if taken
-    let (listener, actual_port) = {
-        let mut result = None;
-        for offset in 0..5u16 {
-            let try_port = port.saturating_add(offset);
-            match TcpListener::bind(format!("0.0.0.0:{try_port}")) {
-                Ok(l) => {
-                    if offset > 0 {
-                        warn!("Port {port} in use, using port {try_port} instead");
-                    }
-                    result = Some((l, try_port));
-                    break;
-                }
-                Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                    debug!("Port {try_port} already in use, trying next...");
-                    continue;
-                }
-                Err(e) => return Err(e.into()),
-            }
+    let listener = match TcpListener::bind(format!("0.0.0.0:{port}")) {
+        Ok(l) => l,
+        Err(e) => {
+            let msg = if e.kind() == std::io::ErrorKind::AddrInUse {
+                format!("Port {port} is already in use")
+            } else {
+                format!("Failed to bind port {port}: {e}")
+            };
+            let mut s = state.lock();
+            s.running = false;
+            s.port = Some(port);
+            s.error = Some(msg.clone());
+            anyhow::bail!(msg);
         }
-        result.ok_or_else(|| anyhow::anyhow!(
-            "Could not bind OpenRGB server: ports {port}-{} all in use",
-            port.saturating_add(4)
-        ))?
     };
     listener.set_nonblocking(true)?;
-    info!("OpenRGB SDK server listening on port {actual_port}");
+    info!("OpenRGB SDK server listening on port {port}");
+
+    {
+        let mut s = state.lock();
+        s.running = true;
+        s.port = Some(port);
+        s.error = None;
+    }
 
     let client_count = Arc::new(AtomicUsize::new(0));
 

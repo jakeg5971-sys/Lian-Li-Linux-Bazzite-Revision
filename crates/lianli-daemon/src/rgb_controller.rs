@@ -94,6 +94,11 @@ impl RgbController {
             return;
         }
 
+        if config.openrgb_server {
+            debug!("Skipping native RGB config — OpenRGB server is enabled");
+            return;
+        }
+
         if self.openrgb_active {
             debug!("Skipping native RGB config — OpenRGB has active control");
             return;
@@ -270,9 +275,19 @@ impl RgbController {
             if active {
                 info!("OpenRGB took control — suppressing native RGB config");
             } else {
-                info!("OpenRGB released control — restoring native RGB config");
-                if let Some(config) = self.config.clone() {
-                    self.apply_config(&config);
+                info!("OpenRGB released control");
+                // Only restore native config if the OpenRGB server is disabled;
+                // when the server is enabled, leave LEDs as-is so OpenRGB state persists.
+                let server_enabled = self
+                    .config
+                    .as_ref()
+                    .map(|c| c.openrgb_server)
+                    .unwrap_or(false);
+                if !server_enabled {
+                    info!("Restoring native RGB config");
+                    if let Some(config) = self.config.clone() {
+                        self.apply_config(&config);
+                    }
                 }
             }
         }

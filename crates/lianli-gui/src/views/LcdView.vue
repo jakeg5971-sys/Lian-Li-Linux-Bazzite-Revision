@@ -28,7 +28,7 @@ function addLcd() {
       <template #actions>
         <button
           @click="addLcd"
-          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          class="px-3 py-1.5 text-sm rounded-lg bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors cursor-pointer"
         >
           + Add LCD
         </button>
@@ -38,7 +38,7 @@ function addLcd() {
           class="px-4 py-1.5 text-sm rounded-lg font-medium transition-colors"
           :class="
             configStore.dirty
-              ? 'bg-blue-500 text-white hover:bg-blue-600'
+              ? 'bg-blue-500 text-white hover:bg-blue-600 cursor-pointer'
               : 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
           "
         >

@@ -9,6 +9,7 @@ export const useDeviceStore = defineStore("devices", () => {
     fan_rpms: {},
     coolant_temps: {},
     streaming_active: false,
+    openrgb_status: { enabled: false, running: false, port: null, error: null },
   });
   const daemonConnected = ref(false);
   const loading = ref(false);

@@ -53,6 +53,7 @@ pub struct ServiceManager {
     ipc_thread: Option<JoinHandle<()>>,
     openrgb_stop: Arc<AtomicBool>,
     openrgb_thread: Option<JoinHandle<()>>,
+    openrgb_state: Arc<Mutex<openrgb_server::OpenRgbServerState>>,
 }
 
 impl ServiceManager {
@@ -78,6 +79,7 @@ impl ServiceManager {
             ipc_thread: None,
             openrgb_stop: Arc::new(AtomicBool::new(false)),
             openrgb_thread: None,
+            openrgb_state: Arc::new(Mutex::new(openrgb_server::OpenRgbServerState::default())),
         })
     }
 
@@ -138,6 +140,7 @@ impl ServiceManager {
                         self.last_device_scan = Instant::now() - DEVICE_POLL_INTERVAL;
                         self.start_fan_control();
                         self.apply_rgb_config();
+                        self.start_openrgb_server();
                         self.sync_ipc_state();
                     }
                 }
@@ -149,6 +152,7 @@ impl ServiceManager {
                     self.last_device_scan = Instant::now() - DEVICE_POLL_INTERVAL;
                     self.start_fan_control();
                     self.apply_rgb_config();
+                    self.start_openrgb_server();
                     self.sync_ipc_state();
                 }
             }
@@ -182,6 +186,21 @@ impl ServiceManager {
     fn sync_ipc_telemetry(&self) {
         let mut ipc_state = self.ipc_state.lock();
         ipc_state.telemetry.streaming_active = !self.targets.is_empty();
+
+        // OpenRGB server status
+        let (enabled, _) = self
+            .config
+            .as_ref()
+            .and_then(|c| c.rgb.as_ref())
+            .map(|rgb| (rgb.openrgb_server, rgb.openrgb_port))
+            .unwrap_or((false, 6743));
+        let orgb_state = self.openrgb_state.lock();
+        ipc_state.telemetry.openrgb_status = lianli_shared::ipc::OpenRgbServerStatus {
+            enabled,
+            running: orgb_state.running,
+            port: orgb_state.port,
+            error: orgb_state.error.clone(),
+        };
 
         // Build device list from wireless discovery
         let mut devices = Vec::new();
@@ -425,21 +444,36 @@ impl ServiceManager {
         }
     }
 
-    /// Start the OpenRGB SDK server if enabled in config and we have an RGB controller.
+    /// Start or restart the OpenRGB SDK server based on config.
     fn start_openrgb_server(&mut self) {
-        if self.openrgb_thread.is_some() {
-            return; // Already running
-        }
-
         let (enabled, port) = self
             .config
             .as_ref()
             .and_then(|c| c.rgb.as_ref())
             .map(|rgb| (rgb.openrgb_server, rgb.openrgb_port))
-            .unwrap_or((false, 6742));
+            .unwrap_or((false, 6743));
+
+        // Check if we need to restart (port changed or toggled)
+        let current_state = self.openrgb_state.lock().clone();
+        let needs_restart = self.openrgb_thread.is_some()
+            && (current_state.port != Some(port) || !enabled);
+
+        if needs_restart {
+            info!("Stopping OpenRGB server for reconfiguration");
+            self.openrgb_stop.store(true, Ordering::Relaxed);
+            if let Some(thread) = self.openrgb_thread.take() {
+                let _ = thread.join();
+            }
+            let mut s = self.openrgb_state.lock();
+            *s = openrgb_server::OpenRgbServerState::default();
+        }
 
         if !enabled {
             return;
+        }
+
+        if self.openrgb_thread.is_some() {
+            return; // Already running with correct port
         }
 
         if let Some(ref rgb) = self.rgb_controller {
@@ -448,6 +482,7 @@ impl ServiceManager {
                 Arc::clone(rgb),
                 port,
                 Arc::clone(&self.openrgb_stop),
+                Arc::clone(&self.openrgb_state),
             ));
         }
     }
