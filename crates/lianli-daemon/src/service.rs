@@ -1,4 +1,3 @@
-use crate::config_watcher::ConfigWatcher;
 use crate::fan_controller::FanController;
 use crate::ipc_server::{self, DaemonState};
 use crate::openrgb_server;
@@ -27,7 +26,6 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
-const CONFIG_POLL_INTERVAL: Duration = Duration::from_secs(2);
 const DEVICE_POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// Full USB bus enumeration interval — only needed for hot-plug detection of
 /// wired USB devices (LCD, AIO, etc.). Wireless discovery uses its own RX polling.
@@ -36,7 +34,7 @@ const ACTIVE_SLEEP: Duration = Duration::from_millis(1);
 const IDLE_SLEEP: Duration = Duration::from_millis(200);
 
 pub struct ServiceManager {
-    config_watcher: ConfigWatcher,
+    config_path: PathBuf,
     config: Option<AppConfig>,
     media_assets: HashMap<usize, MediaAsset>,
     targets: HashMap<usize, ActiveTarget>,
@@ -48,7 +46,6 @@ pub struct ServiceManager {
     wired_fan_device_info: Vec<DeviceInfo>,
     /// Shared reference to wired fan device handles (for RPM reading).
     wired_fan_devices: Arc<HashMap<String, Box<dyn FanDevice>>>,
-    last_config_check: Instant,
     last_device_scan: Instant,
     last_usb_enum: Instant,
     /// Cached USB device list from enumerate_devices() — refreshed every USB_ENUM_INTERVAL.
@@ -69,7 +66,7 @@ impl ServiceManager {
         let ipc_state = Arc::new(Mutex::new(DaemonState::new(config_path.clone())));
 
         Ok(Self {
-            config_watcher: ConfigWatcher::new(config_path),
+            config_path,
             config: None,
             media_assets: HashMap::new(),
             targets: HashMap::new(),
@@ -79,7 +76,6 @@ impl ServiceManager {
             rgb_controller: None,
             wired_fan_device_info: Vec::new(),
             wired_fan_devices: Arc::new(HashMap::new()),
-            last_config_check: Instant::now() - CONFIG_POLL_INTERVAL,
             last_device_scan: Instant::now() - DEVICE_POLL_INTERVAL,
             last_usb_enum: Instant::now() - USB_ENUM_INTERVAL,
             cached_usb_devices: Vec::new(),
@@ -102,7 +98,7 @@ impl ServiceManager {
 
         // Create default config if it doesn't exist yet
         {
-            let config_path = self.config_watcher.path();
+            let config_path = &self.config_path;
             if !config_path.exists() {
                 info!(
                     "No config found at {}, creating default",
@@ -129,7 +125,7 @@ impl ServiceManager {
             Arc::clone(&self.ipc_stop),
         ));
 
-        self.load_config(true);
+        self.load_config();
         self.sync_ipc_state();
         self.try_wireless();
         self.open_wired_fan_devices();
@@ -148,24 +144,13 @@ impl ServiceManager {
                     info!("Config reload triggered via IPC");
                     // Force the config watcher to pick up the new file
                     drop(ipc_state);
-                    if self.load_config(true) {
+                    if self.load_config() {
                         self.last_device_scan = Instant::now() - DEVICE_POLL_INTERVAL;
                         self.start_fan_control();
                         self.apply_rgb_config();
                         self.start_openrgb_server();
                         self.sync_ipc_state();
                     }
-                }
-            }
-
-            if now.duration_since(self.last_config_check) >= CONFIG_POLL_INTERVAL {
-                self.last_config_check = now;
-                if self.load_config(false) {
-                    self.last_device_scan = Instant::now() - DEVICE_POLL_INTERVAL;
-                    self.start_fan_control();
-                    self.apply_rgb_config();
-                    self.start_openrgb_server();
-                    self.sync_ipc_state();
                 }
             }
 
@@ -625,14 +610,18 @@ impl ServiceManager {
         self.wireless.has_discovered_devices()
     }
 
-    fn load_config(&mut self, force: bool) -> bool {
-        if let Some(cfg) = self.config_watcher.check(force) {
-            self.config = Some(cfg);
-            self.packet_builder = PacketBuilder::new();
-            self.prepare_media_assets();
-            true
-        } else {
-            false
+    fn load_config(&mut self) -> bool {
+        match AppConfig::load(&self.config_path) {
+            Ok(cfg) => {
+                self.config = Some(cfg);
+                self.packet_builder = PacketBuilder::new();
+                self.prepare_media_assets();
+                true
+            }
+            Err(err) => {
+                warn!("Failed to load config: {err}");
+                false
+            }
         }
     }
 
