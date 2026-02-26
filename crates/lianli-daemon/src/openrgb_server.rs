@@ -4,7 +4,7 @@
 //! Each physical device is exposed as an OpenRGB controller with its native
 //! LED modes. Clients can enumerate devices, set modes, and update per-LED colors.
 
-use crate::rgb_controller::RgbController;
+use crate::rgb_controller::{DirectColorBuffer, RgbController};
 use lianli_shared::rgb::{RgbDeviceCapabilities, RgbDirection, RgbEffect, RgbMode};
 use parking_lot::Mutex;
 use std::io::{Read, Write};
@@ -71,12 +71,13 @@ pub struct OpenRgbServerState {
 /// Starts the OpenRGB SDK server in a background thread.
 pub fn start_openrgb_server(
     rgb: Arc<Mutex<RgbController>>,
+    direct_buffer: Arc<Mutex<DirectColorBuffer>>,
     port: u16,
     stop_flag: Arc<AtomicBool>,
     state: Arc<Mutex<OpenRgbServerState>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
-        if let Err(e) = run_server(rgb, port, &stop_flag, &state) {
+        if let Err(e) = run_server(rgb, direct_buffer, port, &stop_flag, &state) {
             error!("OpenRGB server error: {e}");
             let mut s = state.lock();
             s.running = false;
@@ -91,6 +92,7 @@ pub fn start_openrgb_server(
 
 fn run_server(
     rgb: Arc<Mutex<RgbController>>,
+    direct_buffer: Arc<Mutex<DirectColorBuffer>>,
     port: u16,
     stop_flag: &Arc<AtomicBool>,
     state: &Arc<Mutex<OpenRgbServerState>>,
@@ -135,6 +137,7 @@ fn run_server(
                     .ok();
 
                 let rgb = Arc::clone(&rgb);
+                let buf = Arc::clone(&direct_buffer);
                 let count = Arc::clone(&client_count);
                 let stop = Arc::clone(&stop_flag);
 
@@ -144,7 +147,7 @@ fn run_server(
                 }
 
                 thread::spawn(move || {
-                    let mut client = ClientHandler::new(stream, rgb, stop);
+                    let mut client = ClientHandler::new(stream, rgb, buf, stop);
                     if let Err(e) = client.run() {
                         debug!("OpenRGB client disconnected: {e}");
                     }
@@ -173,16 +176,23 @@ fn run_server(
 struct ClientHandler {
     stream: TcpStream,
     rgb: Arc<Mutex<RgbController>>,
+    direct_buffer: Arc<Mutex<DirectColorBuffer>>,
     stop_flag: Arc<AtomicBool>,
     protocol_version: u32,
     client_name: String,
 }
 
 impl ClientHandler {
-    fn new(stream: TcpStream, rgb: Arc<Mutex<RgbController>>, stop_flag: Arc<AtomicBool>) -> Self {
+    fn new(
+        stream: TcpStream,
+        rgb: Arc<Mutex<RgbController>>,
+        direct_buffer: Arc<Mutex<DirectColorBuffer>>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             stream,
             rgb,
+            direct_buffer,
             stop_flag,
             protocol_version: 0,
             client_name: String::new(),
@@ -334,20 +344,14 @@ impl ClientHandler {
         let caps = self.rgb.lock().capabilities();
         if let Some(cap) = caps.get(dev_idx as usize) {
             let device_id = cap.device_id.clone();
-            // Distribute colors across zones
+            // Buffer colors per zone — writer thread will flush at 30fps
+            let mut buf = self.direct_buffer.lock();
             let mut offset = 0;
             for (zone_idx, zone) in cap.zones.iter().enumerate() {
                 let count = zone.led_count as usize;
                 let end = (offset + count).min(colors.len());
                 if offset < colors.len() {
-                    let zone_colors = &colors[offset..end];
-                    if let Err(e) = self
-                        .rgb
-                        .lock()
-                        .set_direct_colors(&device_id, zone_idx as u8, zone_colors)
-                    {
-                        debug!("OpenRGB UpdateLEDs error for {device_id} zone {zone_idx}: {e}");
-                    }
+                    buf.set(device_id.clone(), zone_idx as u8, colors[offset..end].to_vec());
                 }
                 offset = end;
             }
@@ -369,13 +373,7 @@ impl ClientHandler {
         let caps = self.rgb.lock().capabilities();
         if let Some(cap) = caps.get(dev_idx as usize) {
             let device_id = cap.device_id.clone();
-            if let Err(e) = self
-                .rgb
-                .lock()
-                .set_direct_colors(&device_id, zone_idx, &colors)
-            {
-                debug!("OpenRGB UpdateZoneLEDs error for {device_id} zone {zone_idx}: {e}");
-            }
+            self.direct_buffer.lock().set(device_id, zone_idx, colors);
         }
 
         Ok(())
@@ -400,15 +398,8 @@ impl ClientHandler {
             for (zone_idx, zone) in cap.zones.iter().enumerate() {
                 let count = zone.led_count as usize;
                 if led_idx < offset + count {
-                    // Build a single-LED color array for this zone
                     let colors = vec![[r, g, b]];
-                    if let Err(e) = self
-                        .rgb
-                        .lock()
-                        .set_direct_colors(&device_id, zone_idx as u8, &colors)
-                    {
-                        debug!("OpenRGB UpdateSingleLED error: {e}");
-                    }
+                    self.direct_buffer.lock().set(device_id, zone_idx as u8, colors);
                     break;
                 }
                 offset += count;

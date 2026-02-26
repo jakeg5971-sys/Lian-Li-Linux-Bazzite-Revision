@@ -686,6 +686,7 @@ impl WirelessController {
         mac: &[u8; 6],
         colors: &[[u8; 3]],
         effect_index: &[u8; 4],
+        header_repeats: u8,
     ) -> Result<()> {
         let tx = self.tx.as_ref().context("TX device not connected")?;
 
@@ -746,11 +747,14 @@ impl WirelessController {
                 // Bytes 32-33: interval (0 for direct mode)
                 // Bytes 34-39: sub-interval / flags
 
-                // Send header packet 4 times for reliability (L-Connect 3 convention)
+                // Send header packet N times for reliability.
+                // Native config (one-shot): 4× with 20ms gaps.
+                // OpenRGB streaming: 1× (next frame arrives in ~33ms anyway).
+                let repeats = header_repeats.max(1);
                 let handle = tx.lock();
-                for repeat in 0..4u8 {
+                for repeat in 0..repeats {
                     self.send_rf_packet(&handle, &device, &rf_data)?;
-                    if repeat < 3 {
+                    if repeat < repeats - 1 {
                         thread::sleep(Duration::from_millis(20));
                     }
                 }

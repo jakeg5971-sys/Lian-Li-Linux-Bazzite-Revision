@@ -54,6 +54,8 @@ pub struct ServiceManager {
     openrgb_stop: Arc<AtomicBool>,
     openrgb_thread: Option<JoinHandle<()>>,
     openrgb_state: Arc<Mutex<openrgb_server::OpenRgbServerState>>,
+    direct_color_buffer: Arc<Mutex<crate::rgb_controller::DirectColorBuffer>>,
+    direct_color_writer: Option<JoinHandle<()>>,
 }
 
 impl ServiceManager {
@@ -80,6 +82,8 @@ impl ServiceManager {
             openrgb_stop: Arc::new(AtomicBool::new(false)),
             openrgb_thread: None,
             openrgb_state: Arc::new(Mutex::new(openrgb_server::OpenRgbServerState::default())),
+            direct_color_buffer: Arc::new(Mutex::new(crate::rgb_controller::DirectColorBuffer::new())),
+            direct_color_writer: None,
         })
     }
 
@@ -464,6 +468,9 @@ impl ServiceManager {
             if let Some(thread) = self.openrgb_thread.take() {
                 let _ = thread.join();
             }
+            if let Some(thread) = self.direct_color_writer.take() {
+                let _ = thread.join();
+            }
             let mut s = self.openrgb_state.lock();
             *s = openrgb_server::OpenRgbServerState::default();
         }
@@ -480,10 +487,20 @@ impl ServiceManager {
             self.openrgb_stop.store(false, Ordering::Relaxed);
             self.openrgb_thread = Some(openrgb_server::start_openrgb_server(
                 Arc::clone(rgb),
+                Arc::clone(&self.direct_color_buffer),
                 port,
                 Arc::clone(&self.openrgb_stop),
                 Arc::clone(&self.openrgb_state),
             ));
+            // Start the async writer thread that flushes buffered colors at 30fps
+            if self.direct_color_writer.is_none() {
+                self.direct_color_writer =
+                    Some(crate::rgb_controller::start_direct_color_writer(
+                        Arc::clone(rgb),
+                        Arc::clone(&self.direct_color_buffer),
+                        Arc::clone(&self.openrgb_stop),
+                    ));
+            }
         }
     }
 

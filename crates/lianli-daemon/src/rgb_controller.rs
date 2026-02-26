@@ -7,8 +7,12 @@
 use lianli_devices::traits::RgbDevice;
 use lianli_devices::wireless::{WirelessController, WirelessFanType};
 use lianli_shared::rgb::{RgbAppConfig, RgbDeviceCapabilities, RgbEffect, RgbMode, RgbZoneInfo};
+use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
 /// Tracks a wireless device's RGB state for `send_rgb_direct`.
@@ -158,7 +162,7 @@ impl RgbController {
             state.effect_counter = state.effect_counter.wrapping_add(1);
             let idx = state.effect_counter.to_be_bytes();
 
-            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx)?;
+            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx, 4)?;
             debug!(
                 "Set wireless RGB on {device_id} zone {zone}: {:?}, {} LEDs/fan",
                 effect.mode, lpf
@@ -202,7 +206,7 @@ impl RgbController {
 
             state.effect_counter = state.effect_counter.wrapping_add(1);
             let idx = state.effect_counter.to_be_bytes();
-            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx)?;
+            wireless.send_rgb_direct(&state.mac, &state.led_state, &idx, 1)?;
             return Ok(());
         }
 
@@ -338,4 +342,76 @@ fn render_zone_color(effect: &RgbEffect, led_count: usize) -> Vec<[u8; 3]> {
         }
     };
     vec![color; led_count]
+}
+
+// ── Direct color buffer for async OpenRGB streaming ────────────────────────
+
+/// Buffers per-device, per-zone direct color updates for async flushing.
+///
+/// The OpenRGB TCP handler writes latest colors here (fast, no device I/O).
+/// A writer thread flushes dirty devices at ~30fps, dropping intermediate frames.
+pub struct DirectColorBuffer {
+    pending: HashMap<String, HashMap<u8, Vec<[u8; 3]>>>,
+}
+
+impl DirectColorBuffer {
+    pub fn new() -> Self {
+        Self {
+            pending: HashMap::new(),
+        }
+    }
+
+    /// Store colors for a device zone (overwrites any previous pending value).
+    pub fn set(&mut self, device_id: String, zone: u8, colors: Vec<[u8; 3]>) {
+        self.pending.entry(device_id).or_default().insert(zone, colors);
+    }
+
+    /// Take all pending updates, clearing the buffer.
+    pub fn take_all(&mut self) -> HashMap<String, HashMap<u8, Vec<[u8; 3]>>> {
+        std::mem::take(&mut self.pending)
+    }
+}
+
+/// Spawns a background thread that flushes buffered direct colors at ~30fps.
+///
+/// This decouples the OpenRGB TCP reader from device I/O, preventing backlog.
+/// Intermediate frames are dropped — only the latest color state per device is sent.
+pub fn start_direct_color_writer(
+    rgb: Arc<Mutex<RgbController>>,
+    buffer: Arc<Mutex<DirectColorBuffer>>,
+    stop_flag: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let tick = Duration::from_millis(33); // ~30fps
+        debug!("Direct color writer started (30fps)");
+
+        loop {
+            if stop_flag.load(Ordering::Relaxed) {
+                break;
+            }
+
+            let start = Instant::now();
+
+            // Take all pending updates atomically
+            let updates = buffer.lock().take_all();
+
+            if !updates.is_empty() {
+                let mut rgb = rgb.lock();
+                for (device_id, zones) in updates {
+                    for (zone, colors) in zones {
+                        if let Err(e) = rgb.set_direct_colors(&device_id, zone, &colors) {
+                            debug!("Direct color flush error for {device_id} zone {zone}: {e}");
+                        }
+                    }
+                }
+            }
+
+            let elapsed = start.elapsed();
+            if elapsed < tick {
+                thread::sleep(tick - elapsed);
+            }
+        }
+
+        debug!("Direct color writer stopped");
+    })
 }
