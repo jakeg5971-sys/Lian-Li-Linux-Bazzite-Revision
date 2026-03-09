@@ -23,6 +23,7 @@ use tracing::{debug, info, warn};
 // Report IDs
 const REPORT_ID_A: u8 = 0x01;
 const REPORT_ID_B: u8 = 0x02;
+const REPORT_ID_C: u8 = 0x03;
 
 // Packet sizes
 const A_PACKET_SIZE: usize = 64;
@@ -30,6 +31,9 @@ const A_HEADER_LEN: usize = 6;
 const B_PACKET_SIZE: usize = 1024;
 const B_HEADER_LEN: usize = 11;
 const B_MAX_PAYLOAD: usize = B_PACKET_SIZE - B_HEADER_LEN; // 1013
+const C_PACKET_SIZE: usize = 512;
+const C_HEADER_LEN: usize = 11;
+const C_MAX_PAYLOAD: usize = C_PACKET_SIZE - C_HEADER_LEN; // 501
 
 const READ_TIMEOUT_MS: i32 = 200;
 const INIT_READ_TIMEOUT_MS: i32 = 3000;
@@ -140,6 +144,8 @@ pub struct HydroShiftLcdController {
     brightness: u8,
     rotation: ScreenRotation,
     initialized: bool,
+    /// Firmware >= 1.2 supports 512-byte C-command packets for LCD frames.
+    use_c_command: bool,
 }
 
 impl HydroShiftLcdController {
@@ -154,6 +160,7 @@ impl HydroShiftLcdController {
             brightness: 50,
             rotation: ScreenRotation::Rotate0,
             initialized: false,
+            use_c_command: false,
         };
 
         ctrl.init()?;
@@ -164,7 +171,19 @@ impl HydroShiftLcdController {
         info!("Initializing {}", self.variant.name());
 
         match self.read_firmware_internal(INIT_READ_TIMEOUT_MS) {
-            Ok(fw) => info!("  Firmware: {fw}"),
+            Ok(fw) => {
+                // Firmware >= 1.2 supports smaller 512-byte C-command packets.
+                if let Some(ver) = parse_firmware_version(&fw) {
+                    if ver >= (1, 2) {
+                        info!("  Firmware: {fw} (using 512-byte frame mode)");
+                        self.use_c_command = true;
+                    } else {
+                        info!("  Firmware: {fw}");
+                    }
+                } else {
+                    info!("  Firmware: {fw}");
+                }
+            }
             Err(e) => warn!("  Failed to read firmware: {e}"),
         }
 
@@ -239,12 +258,12 @@ impl HydroShiftLcdController {
             self.apply_lcd_settings()?;
             self.initialized = true;
         }
-        self.send_b_command_chunked(CMD_SEND_JPEG, frame)
+        self.send_chunked(CMD_SEND_JPEG, frame)
     }
 
     /// Send a JPEG frame to the LCD (no initialization check).
     pub fn send_jpeg(&self, jpeg_data: &[u8]) -> Result<()> {
-        self.send_b_command_chunked(CMD_SEND_JPEG, jpeg_data)
+        self.send_chunked(CMD_SEND_JPEG, jpeg_data)
     }
 
     pub fn variant(&self) -> AioLcdVariant {
@@ -299,10 +318,16 @@ impl HydroShiftLcdController {
     }
 
     fn send_b_command(&self, cmd: u8, data: &[u8]) -> Result<()> {
-        self.send_b_command_chunked(cmd, data)
+        self.send_chunked(cmd, data)
     }
 
-    fn send_b_command_chunked(&self, cmd: u8, data: &[u8]) -> Result<()> {
+    fn send_chunked(&self, cmd: u8, data: &[u8]) -> Result<()> {
+        let (report_id, pkt_size, max_payload) = if self.use_c_command {
+            (REPORT_ID_C, C_PACKET_SIZE, C_MAX_PAYLOAD)
+        } else {
+            (REPORT_ID_B, B_PACKET_SIZE, B_MAX_PAYLOAD)
+        };
+
         let total_size = data.len();
         let mut offset = 0;
         let mut packet_num: u32 = 0;
@@ -310,9 +335,11 @@ impl HydroShiftLcdController {
 
         loop {
             let remaining = total_size.saturating_sub(offset);
-            let chunk_len = remaining.min(B_MAX_PAYLOAD);
+            let chunk_len = remaining.min(max_payload);
 
-            let pkt = build_b_packet(
+            let pkt = build_lcd_packet(
+                report_id,
+                pkt_size,
                 cmd,
                 total_size as u32,
                 packet_num,
@@ -323,7 +350,7 @@ impl HydroShiftLcdController {
                 },
             );
 
-            dev.write(&pkt).context("AIO LCD: write B-command")?;
+            dev.write(&pkt).context("AIO LCD: write LCD command")?;
 
             offset += chunk_len;
             packet_num += 1;
@@ -434,10 +461,21 @@ impl LcdDevice for HydroShiftLcdController {
     }
 }
 
-fn build_b_packet(cmd: u8, total_data_size: u32, packet_num: u32, payload: &[u8]) -> Vec<u8> {
-    let mut pkt = vec![0u8; B_PACKET_SIZE];
+/// Build a B-command (1024B) or C-command (512B) LCD packet.
+/// Header layout is identical; only report ID, packet size, and max payload differ.
+fn build_lcd_packet(
+    report_id: u8,
+    pkt_size: usize,
+    cmd: u8,
+    total_data_size: u32,
+    packet_num: u32,
+    payload: &[u8],
+) -> Vec<u8> {
+    let header_len = 11;
+    let max_payload = pkt_size - header_len;
+    let mut pkt = vec![0u8; pkt_size];
 
-    pkt[0] = REPORT_ID_B;
+    pkt[0] = report_id;
     pkt[1] = cmd;
 
     // Total data size (4 bytes BE)
@@ -452,16 +490,25 @@ fn build_b_packet(cmd: u8, total_data_size: u32, packet_num: u32, payload: &[u8]
     pkt[8] = packet_num as u8;
 
     // Payload length (2 bytes BE)
-    let len = payload.len().min(B_MAX_PAYLOAD);
+    let len = payload.len().min(max_payload);
     pkt[9] = (len >> 8) as u8;
     pkt[10] = len as u8;
 
     // Payload
     if len > 0 {
-        pkt[B_HEADER_LEN..B_HEADER_LEN + len].copy_from_slice(&payload[..len]);
+        pkt[header_len..header_len + len].copy_from_slice(&payload[..len]);
     }
 
     pkt
+}
+
+/// Parse a firmware version string like "1.2" or "V1.3" into (major, minor).
+fn parse_firmware_version(fw: &str) -> Option<(u32, u32)> {
+    let s = fw.trim().trim_start_matches(|c: char| !c.is_ascii_digit());
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
 }
 
 const CMD_SET_PUMP_LIGHT: u8 = 0x83;
