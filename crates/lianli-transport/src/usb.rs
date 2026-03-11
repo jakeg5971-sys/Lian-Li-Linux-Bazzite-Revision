@@ -8,30 +8,49 @@ pub const EP_IN: u8 = 0x81;
 pub const USB_TIMEOUT: Duration = Duration::from_millis(5_000);
 pub const LCD_WRITE_TIMEOUT: Duration = Duration::from_millis(10_000);
 
-/// Low-level USB bulk transport wrapping a `rusb` device handle.
+/// Low-level USB transport wrapping a `rusb` device handle.
+///
+/// Automatically detects endpoint transfer types (bulk vs interrupt) from
+/// the USB descriptor so the correct libusb call is used. On Windows, WinUSB
+/// abstracts this away, but Linux libusb requires the right transfer type.
 pub struct UsbTransport {
     handle: DeviceHandle<GlobalContext>,
     ep_out: u8,
     ep_in: u8,
+    ep_in_interrupt: bool,
+    ep_out_interrupt: bool,
 }
 
 impl UsbTransport {
     pub fn open(vid: u16, pid: u16) -> Result<Self, TransportError> {
-        let handle = rusb::open_device_with_vid_pid(vid, pid)
+        let device = rusb::devices()?
+            .iter()
+            .find(|d| {
+                d.device_descriptor()
+                    .map(|desc| desc.vendor_id() == vid && desc.product_id() == pid)
+                    .unwrap_or(false)
+            })
             .ok_or(TransportError::DeviceNotFound { vid, pid })?;
-        Ok(Self {
-            handle,
-            ep_out: EP_OUT,
-            ep_in: EP_IN,
-        })
-    }
-
-    pub fn open_device(device: Device<GlobalContext>) -> Result<Self, TransportError> {
+        let (ep_in_interrupt, ep_out_interrupt) = detect_endpoint_types(&device);
         let handle = device.open()?;
         Ok(Self {
             handle,
             ep_out: EP_OUT,
             ep_in: EP_IN,
+            ep_in_interrupt,
+            ep_out_interrupt,
+        })
+    }
+
+    pub fn open_device(device: Device<GlobalContext>) -> Result<Self, TransportError> {
+        let (ep_in_interrupt, ep_out_interrupt) = detect_endpoint_types(&device);
+        let handle = device.open()?;
+        Ok(Self {
+            handle,
+            ep_out: EP_OUT,
+            ep_in: EP_IN,
+            ep_in_interrupt,
+            ep_out_interrupt,
         })
     }
 
@@ -80,11 +99,19 @@ impl UsbTransport {
     }
 
     pub fn write_bulk(&self, data: &[u8], timeout: Duration) -> Result<usize, TransportError> {
-        Ok(self.handle.write_bulk(self.ep_out, data, timeout)?)
+        if self.ep_out_interrupt {
+            Ok(self.handle.write_interrupt(self.ep_out, data, timeout)?)
+        } else {
+            Ok(self.handle.write_bulk(self.ep_out, data, timeout)?)
+        }
     }
 
     pub fn read_bulk(&self, buf: &mut [u8], timeout: Duration) -> Result<usize, TransportError> {
-        Ok(self.handle.read_bulk(self.ep_in, buf, timeout)?)
+        if self.ep_in_interrupt {
+            Ok(self.handle.read_interrupt(self.ep_in, buf, timeout)?)
+        } else {
+            Ok(self.handle.read_bulk(self.ep_in, buf, timeout)?)
+        }
     }
 
     pub fn release(&self) {
@@ -109,6 +136,43 @@ impl Drop for UsbTransport {
     fn drop(&mut self) {
         let _ = self.handle.release_interface(0);
     }
+}
+
+/// Detect whether EP_IN and EP_OUT are interrupt endpoints by reading the
+/// USB descriptor. Returns `(ep_in_is_interrupt, ep_out_is_interrupt)`.
+fn detect_endpoint_types(device: &Device<GlobalContext>) -> (bool, bool) {
+    let config = match device.active_config_descriptor() {
+        Ok(c) => c,
+        Err(_) => return (false, false),
+    };
+    let mut in_interrupt = false;
+    let mut out_interrupt = false;
+    for iface in config.interfaces() {
+        for desc in iface.descriptors() {
+            for ep in desc.endpoint_descriptors() {
+                if ep.address() == EP_IN
+                    && ep.transfer_type() == rusb::TransferType::Interrupt
+                {
+                    in_interrupt = true;
+                }
+                if ep.address() == EP_OUT
+                    && ep.transfer_type() == rusb::TransferType::Interrupt
+                {
+                    out_interrupt = true;
+                }
+            }
+        }
+    }
+    if in_interrupt || out_interrupt {
+        debug!(
+            "Endpoint types: IN=0x{:02x} {}, OUT=0x{:02x} {}",
+            EP_IN,
+            if in_interrupt { "interrupt" } else { "bulk" },
+            EP_OUT,
+            if out_interrupt { "interrupt" } else { "bulk" },
+        );
+    }
+    (in_interrupt, out_interrupt)
 }
 
 /// Find all USB devices matching a VID/PID, sorted by bus/address.
