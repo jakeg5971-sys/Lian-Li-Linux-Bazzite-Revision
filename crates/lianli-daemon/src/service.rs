@@ -5,7 +5,8 @@ use crate::rgb_controller::RgbController;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
-    enumerate_devices, enumerate_hid_devices, open_fan_device, open_rgb_devices,
+    ensure_hid_devices_bound, enumerate_devices, enumerate_hid_devices, open_fan_device,
+    open_rgb_devices,
 };
 use lianli_devices::hydroshift_lcd::HydroShiftLcdController;
 use lianli_devices::slv3_lcd::Slv3LcdDevice;
@@ -130,6 +131,7 @@ impl ServiceManager {
             Arc::clone(&self.ipc_stop),
         ));
         self.try_wireless();
+        ensure_hid_devices_bound();
         self.open_wired_fan_devices();
         self.init_rgb_controller();
         self.start_openrgb_server();
