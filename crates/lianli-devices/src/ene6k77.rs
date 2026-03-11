@@ -13,7 +13,7 @@ use lianli_transport::RusbHidTransport;
 use parking_lot::Mutex;
 use std::thread;
 use std::time::Duration;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 const REPORT_ID: u8 = 0xE0;
 const CMD_DELAY: Duration = Duration::from_millis(20);
@@ -151,7 +151,7 @@ impl Ene6k77Controller {
                 self.firmware = Some(fw);
             }
             Err(e) => {
-                warn!("  Failed to read firmware: {e}");
+                debug!("  Firmware read unavailable (rusb transport): {e}");
             }
         }
 

@@ -5,8 +5,8 @@ use crate::rgb_controller::RgbController;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
-    enumerate_devices, enumerate_hid_devices, open_ene6k77_rgb_via_rusb, open_ene6k77_via_rusb,
-    open_fan_device, open_rgb_devices,
+    enumerate_devices, enumerate_hid_devices, open_ene6k77_via_rusb, open_fan_device,
+    open_rgb_devices,
 };
 use lianli_devices::hydroshift_lcd::HydroShiftLcdController;
 use lianli_devices::slv3_lcd::Slv3LcdDevice;
@@ -436,37 +436,9 @@ impl ServiceManager {
             }
         }
 
-        // ENE 6K77 RGB: fall back to rusb if hidapi found nothing (no hidraw node).
-        if let Ok(usb_devices) = enumerate_devices() {
-            for det in usb_devices {
-                if det.family != DeviceFamily::Ene6k77 {
-                    continue;
-                }
-                let base_id = det
-                    .serial
-                    .clone()
-                    .unwrap_or_else(|| format!("usb:{}:{}", det.bus, det.address));
-                if wired_rgb.contains_key(&base_id) {
-                    continue; // Already opened via hidapi
-                }
-                if let Some(result) = open_ene6k77_rgb_via_rusb(&det) {
-                    match result {
-                        Ok(devices) => {
-                            for (suffix, ctrl) in devices {
-                                let device_id = if suffix.is_empty() {
-                                    base_id.clone()
-                                } else {
-                                    format!("{base_id}:{suffix}")
-                                };
-                                info!("Opened {} (rusb) as RGB device: {device_id}", det.name);
-                                wired_rgb.insert(device_id, ctrl);
-                            }
-                        }
-                        Err(err) => warn!("Failed to init RGB for {} (rusb): {err}", det.name),
-                    }
-                }
-            }
-        }
+        // TODO: ENE 6K77 RGB via rusb — requires shared transport with fan device.
+        // The fan handle claims the HID interface exclusively, so a second open fails.
+        // Needs Arc<Mutex<RusbHidTransport>> shared between FanDevice and RgbDevice.
 
         let wireless = if self.wireless.has_discovered_devices() {
             Some(Arc::new(self.wireless.clone()))
