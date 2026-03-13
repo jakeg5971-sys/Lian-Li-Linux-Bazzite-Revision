@@ -8,6 +8,7 @@ const DES_KEY: [u8; 8] = *b"slv3tuzx";
 type DesCbc = Encryptor<Des>;
 
 // Command types for VID=0x1CBE LCD devices.
+pub const CMD_GET_VER: u8 = 0x0A;
 pub const CMD_ROTATE: u8 = 0x0D;
 pub const CMD_BRIGHTNESS: u8 = 0x0E;
 pub const CMD_FRAME_RATE: u8 = 0x0F;
@@ -156,6 +157,11 @@ impl PacketBuilder {
     /// Build an H2 brightness header (cmd 0x0E, value 0-100).
     pub fn brightness_header_h2(&mut self, brightness: u8) -> Vec<u8> {
         self.build_h2(CMD_BRIGHTNESS, &[brightness.min(100)])
+    }
+
+    /// Build an H2 GetVer header (cmd 0x0A) — queries firmware version.
+    pub fn get_ver_header_h2(&mut self) -> Vec<u8> {
+        self.build_h2(CMD_GET_VER, &[])
     }
 }
 

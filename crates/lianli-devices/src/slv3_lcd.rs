@@ -70,10 +70,10 @@ impl Slv3LcdDevice {
         );
         let header = builder.header(0, 0x0D, false);
         self.transport
-            .write_bulk(&header, LCD_WRITE_TIMEOUT)
+            .write(&header, LCD_WRITE_TIMEOUT)
             .context("writing LCD init header")?;
         let mut buf = [0u8; 511];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        let _ = self.transport.read(&mut buf, USB_TIMEOUT);
         self.initialized = true;
         Ok(())
     }
@@ -95,11 +95,11 @@ impl Slv3LcdDevice {
         packet[512..512 + frame.len()].copy_from_slice(frame);
 
         self.transport
-            .write_bulk(&packet, LCD_WRITE_TIMEOUT)
+            .write(&packet, LCD_WRITE_TIMEOUT)
             .context("writing LCD frame data")?;
 
         let mut buf = [0u8; 511];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        let _ = self.transport.read(&mut buf, USB_TIMEOUT);
         Ok(())
     }
 }

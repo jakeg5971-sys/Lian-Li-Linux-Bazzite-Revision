@@ -15,7 +15,7 @@ use anyhow::{bail, Context, Result};
 use lianli_shared::screen::ScreenInfo;
 use lianli_transport::usb::{UsbTransport, LCD_WRITE_TIMEOUT, USB_TIMEOUT};
 use rusb::{Device, GlobalContext};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Generic WinUSB LCD device.
 ///
@@ -100,12 +100,10 @@ impl WinUsbLcdDevice {
         packet[512..total].copy_from_slice(frame);
 
         self.transport
-            .write_bulk(&packet, LCD_WRITE_TIMEOUT)
+            .write(&packet, LCD_WRITE_TIMEOUT)
             .context("writing LCD frame")?;
 
-        // Read ack (may timeout, that's fine)
-        let mut buf = [0u8; 512];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        self.log_read_response("frame ack");
 
         Ok(())
     }
@@ -114,10 +112,9 @@ impl WinUsbLcdDevice {
     pub fn set_brightness_val(&mut self, brightness: u8) -> Result<()> {
         let header = self.builder.brightness_header_h2(brightness);
         self.transport
-            .write_bulk(&header, LCD_WRITE_TIMEOUT)
+            .write(&header, LCD_WRITE_TIMEOUT)
             .context("setting brightness")?;
-        let mut buf = [0u8; 512];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        self.log_read_response("brightness");
         debug!("Set brightness to {}", brightness.min(100));
         Ok(())
     }
@@ -126,10 +123,9 @@ impl WinUsbLcdDevice {
     pub fn set_rotation_val(&mut self, rotation: u8) -> Result<()> {
         let header = self.builder.rotation_header_h2(rotation);
         self.transport
-            .write_bulk(&header, LCD_WRITE_TIMEOUT)
+            .write(&header, LCD_WRITE_TIMEOUT)
             .context("setting rotation")?;
-        let mut buf = [0u8; 512];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        self.log_read_response("rotation");
         debug!("Set rotation to {}", rotation);
         Ok(())
     }
@@ -138,20 +134,48 @@ impl WinUsbLcdDevice {
     pub fn set_frame_rate(&mut self, fps: u8) -> Result<()> {
         let header = self.builder.frame_rate_header_h2(fps);
         self.transport
-            .write_bulk(&header, LCD_WRITE_TIMEOUT)
+            .write(&header, LCD_WRITE_TIMEOUT)
             .context("setting frame rate")?;
-        let mut buf = [0u8; 512];
-        let _ = self.transport.read_bulk(&mut buf, USB_TIMEOUT);
+        self.log_read_response("frame rate");
         debug!("Set frame rate to {fps}");
         Ok(())
     }
 
     fn do_init(&mut self) -> Result<()> {
-        // H2 init (WinUsbH2.cs::InitDev): only set frame rate, no rotation header.
+        // GetVer handshake — also auto-detects endpoint transfer type via fallback read.
+        let ver_header = self.builder.get_ver_header_h2();
+        self.transport
+            .write(&ver_header, LCD_WRITE_TIMEOUT)
+            .context("sending GetVer")?;
+        let mut buf = [0u8; 512];
+        match self.transport.read_with_fallback(&mut buf, USB_TIMEOUT) {
+            Ok(n) if n > 0 => {
+                let ver_str = std::str::from_utf8(&buf[8..40])
+                    .unwrap_or("<invalid utf8>")
+                    .trim_end_matches('\0');
+                info!("Device firmware: {ver_str}");
+            }
+            Ok(_) => warn!("No device response to GetVer (timeout on both bulk and interrupt)"),
+            Err(e) => warn!("GetVer read failed: {e}"),
+        }
+
         self.set_frame_rate(30)?;
 
         self.initialized = true;
         Ok(())
+    }
+
+    /// Read and log a device response. Non-fatal — timeouts are expected
+    /// for some devices.
+    fn log_read_response(&mut self, context: &str) {
+        let mut buf = [0u8; 512];
+        match self.transport.read(&mut buf, USB_TIMEOUT) {
+            Ok(n) if n > 0 => {
+                debug!("Response for {context} ({n} bytes): {:02x?}", &buf[..n.min(32)]);
+            }
+            Ok(_) => {}
+            Err(e) => warn!("Read after {context} failed: {e}"),
+        }
     }
 }
 

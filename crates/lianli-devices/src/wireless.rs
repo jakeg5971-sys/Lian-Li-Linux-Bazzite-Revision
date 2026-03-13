@@ -389,13 +389,13 @@ impl WirelessController {
             cmd[1] = channel;
 
             let handle = tx.lock();
-            if handle.write_bulk(&cmd, USB_TIMEOUT).is_err() {
+            if handle.write(&cmd, USB_TIMEOUT).is_err() {
                 drop(handle);
                 continue;
             }
 
             let mut response = [0u8; 64];
-            let len = match handle.read_bulk(&mut response, Duration::from_millis(500)) {
+            let len = match handle.read(&mut response, Duration::from_millis(500)) {
                 Ok(len) => len,
                 Err(_) => {
                     drop(handle);
@@ -441,7 +441,7 @@ impl WirelessController {
         {
             let handle = tx.lock();
             handle
-                .write_bulk(&CMD_RESET, USB_TIMEOUT)
+                .write(&CMD_RESET, USB_TIMEOUT)
                 .context("sending TX reset")?;
         }
 
@@ -479,7 +479,7 @@ impl WirelessController {
         if let Some(tx) = &self.tx {
             let handle = tx.lock();
             handle
-                .write_bulk(&CMD_VIDEO_START, USB_TIMEOUT)
+                .write(&CMD_VIDEO_START, USB_TIMEOUT)
                 .context("sending TX video start")?;
             thread::sleep(Duration::from_millis(2));
 
@@ -494,7 +494,7 @@ impl WirelessController {
                 cmd[2] = master_ch;
                 cmd[3] = 0xFF; // Prep marker
                 handle
-                    .write_bulk(&cmd, USB_TIMEOUT)
+                    .write(&cmd, USB_TIMEOUT)
                     .context("sending TX prep command")?;
                 thread::sleep(Duration::from_millis(1));
             }
@@ -516,14 +516,14 @@ impl WirelessController {
                 {
                     let handle = rx.lock();
                     handle
-                        .write_bulk(cmd, USB_TIMEOUT)
+                        .write(cmd, USB_TIMEOUT)
                         .context("sending RX command")?;
                 }
                 thread::sleep(Duration::from_millis(2));
                 if capture {
                     let mut buf = [0u8; 64];
                     let handle = rx.lock();
-                    if let Ok(len) = handle.read_bulk(&mut buf, USB_TIMEOUT) {
+                    if let Ok(len) = handle.read(&mut buf, USB_TIMEOUT) {
                         debug!("RX resp: {:02x?}", &buf[..len.min(8)]);
                     }
                 }
@@ -544,7 +544,7 @@ impl WirelessController {
         if let Some(tx) = &self.tx {
             {
                 let handle = tx.lock();
-                if handle.write_bulk(&CMD_RESET, USB_TIMEOUT).is_err() {
+                if handle.write(&CMD_RESET, USB_TIMEOUT).is_err() {
                     return false;
                 }
             }
@@ -654,7 +654,7 @@ impl WirelessController {
             packet[4..64].copy_from_slice(&rf_data[start..end]);
 
             handle
-                .write_bulk(&packet, USB_TIMEOUT)
+                .write(&packet, USB_TIMEOUT)
                 .context("sending fan speed RF packet")?;
             thread::sleep(Duration::from_millis(1));
         }
@@ -848,7 +848,7 @@ impl WirelessController {
             packet[4..64].copy_from_slice(&rf_data[start..end]);
 
             handle
-                .write_bulk(&packet, USB_TIMEOUT)
+                .write(&packet, USB_TIMEOUT)
                 .context("sending RGB RF packet")?;
             thread::sleep(Duration::from_millis(1));
         }
@@ -923,12 +923,12 @@ fn poll_and_discover(
 
     let handle = rx.lock();
     handle
-        .write_bulk(&cmd, USB_TIMEOUT)
+        .write(&cmd, USB_TIMEOUT)
         .context("sending GetDev command")?;
 
     // Response: [0]=0x10, [1]=device_count, [2-3]=mobo_pwm or version, [4+]=42-byte records
     let mut response = [0u8; 512];
-    match handle.read_bulk(&mut response, Duration::from_millis(200)) {
+    match handle.read(&mut response, Duration::from_millis(200)) {
         Ok(len) if len >= 4 => {
             if response[0] != USB_CMD_SEND_RF {
                 debug!("GetDev: unexpected response 0x{:02x}", response[0]);

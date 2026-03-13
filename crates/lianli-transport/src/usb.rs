@@ -10,9 +10,8 @@ pub const LCD_WRITE_TIMEOUT: Duration = Duration::from_millis(10_000);
 
 /// Low-level USB transport wrapping a `rusb` device handle.
 ///
-/// Automatically detects endpoint transfer types (bulk vs interrupt) from
-/// the USB descriptor so the correct libusb call is used. On Windows, WinUSB
-/// abstracts this away, but Linux libusb requires the right transfer type.
+/// Auto-detects endpoint transfer types (bulk vs interrupt) from the USB
+/// descriptor so the correct libusb call is used.
 pub struct UsbTransport {
     handle: DeviceHandle<GlobalContext>,
     ep_out: u8,
@@ -98,7 +97,7 @@ impl UsbTransport {
         Ok(())
     }
 
-    pub fn write_bulk(&self, data: &[u8], timeout: Duration) -> Result<usize, TransportError> {
+    pub fn write(&self, data: &[u8], timeout: Duration) -> Result<usize, TransportError> {
         if self.ep_out_interrupt {
             Ok(self.handle.write_interrupt(self.ep_out, data, timeout)?)
         } else {
@@ -106,11 +105,34 @@ impl UsbTransport {
         }
     }
 
-    pub fn read_bulk(&self, buf: &mut [u8], timeout: Duration) -> Result<usize, TransportError> {
+    pub fn read(&self, buf: &mut [u8], timeout: Duration) -> Result<usize, TransportError> {
         if self.ep_in_interrupt {
             Ok(self.handle.read_interrupt(self.ep_in, buf, timeout)?)
         } else {
             Ok(self.handle.read_bulk(self.ep_in, buf, timeout)?)
+        }
+    }
+
+    /// Try reading, falling back to the alternate transfer type if the
+    /// primary returns no data. Latches the working type on success.
+    pub fn read_with_fallback(&mut self, buf: &mut [u8], timeout: Duration) -> Result<usize, TransportError> {
+        match self.read(buf, timeout) {
+            Ok(n) if n > 0 => return Ok(n),
+            first_result => {
+                if self.ep_in_interrupt {
+                    return first_result;
+                }
+                match self.handle.read_interrupt(self.ep_in, buf, timeout) {
+                    Ok(n) if n > 0 => {
+                        debug!("Interrupt read succeeded ({n} bytes), switching IN endpoint type");
+                        self.ep_in_interrupt = true;
+                        Ok(n)
+                    }
+                    Ok(_) => first_result,
+                    Err(rusb::Error::Timeout) => first_result,
+                    Err(e) => Err(e.into()),
+                }
+            }
         }
     }
 
@@ -163,15 +185,13 @@ fn detect_endpoint_types(device: &Device<GlobalContext>) -> (bool, bool) {
             }
         }
     }
-    if in_interrupt || out_interrupt {
-        debug!(
-            "Endpoint types: IN=0x{:02x} {}, OUT=0x{:02x} {}",
-            EP_IN,
-            if in_interrupt { "interrupt" } else { "bulk" },
-            EP_OUT,
-            if out_interrupt { "interrupt" } else { "bulk" },
-        );
-    }
+    debug!(
+        "Endpoint types: IN=0x{:02x} {}, OUT=0x{:02x} {}",
+        EP_IN,
+        if in_interrupt { "interrupt" } else { "bulk" },
+        EP_OUT,
+        if out_interrupt { "interrupt" } else { "bulk" },
+    );
     (in_interrupt, out_interrupt)
 }
 
