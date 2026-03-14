@@ -13,28 +13,38 @@
 
 ## Supported Devices
 
-### Wired (HID)
+### HID
 
-| Device | Fan Control | RGB | LCD | Pump |
-|--------|:-----------:|:---:|:---:|:----:|
-| UNI FAN SL / AL / SL Infinity / SL V2 / AL V2 (ENE 6K77) | 4 groups | Yes | - | - |
-| UNI FAN TL Controller | 4 ports | Yes | - | - |
-| UNI FAN TL LCD | 4 ports | Yes | 400x400 | - |
-| Galahad II Trinity AIO | Yes | Yes | - | Yes |
-| HydroShift LCD AIO | Yes | Yes | 480x480 | Yes |
-| Galahad II LCD / Vision AIO | Yes | Yes | 480x480 | Yes |
+| Device | Fan Control | RGB | LCD | Pump | Tested |
+|--------|:-----------:|:---:|:---:|:----:|:------:|
+| UNI FAN SL / AL / SL Infinity / SL V2 / AL V2 (ENE 6K77) | 4 groups | Yes | - | - | Yes |
+| UNI FAN TL Controller | 4 ports | Yes | - | - | Yes |
+| UNI FAN TL LCD | 4 ports | Yes | 400x400 | - | Yes |
+| Galahad II Trinity AIO | Yes | Yes | - | Yes | - |
+| HydroShift LCD AIO | Yes | Yes | 480x480 | Yes | Yes |
+| Galahad II LCD / Vision AIO | Yes | Yes | 480x480 | Yes | -* |
 
-### Wireless (USB Bulk via TX/RX dongle)
+### Wireless (via TX/RX dongle)
 
-| Device | RGB | LCD | Notes |
-|--------|:---:|:---:|-------|
-| UNI FAN SL V3 (LCD / LED) | Yes | 480x480 | 120mm / 140mm |
-| UNI FAN TL V2 (LCD / LED) | Yes | 480x480 | 120mm / 140mm |
-| UNI FAN SL-INF | Yes | - | Wireless |
-| UNI FAN CL / RL120 | Yes | - | Wireless |
-| HydroShift II LCD Circle | - | 480x480 | WinUSB |
-| Lancool 207 Digital | - | 1472x720 | WinUSB |
-| Universal Screen 8.8" | - | 1920x480 | WinUSB |
+| Device | RGB | LCD | Tested |
+|--------|:---:|:---:|:------:|
+| UNI FAN TL V2 (LCD / LED) | Yes | 480x480 | Yes |
+| UNI FAN SL V3 (LCD / LED) | Yes | 480x480 | - |
+| UNI FAN SL-INF | Yes | - | - |
+| UNI FAN CL / RL120 | Yes | - | - |
+
+### USB (Standalone)
+
+| Device | LCD | Tested | Notes |
+|--------|:---:|:------:|-------|
+| HydroShift II LCD Circle | 480x480 | Yes | LCD Supports Background image only |
+| Lancool 207 Digital | 1472x720 | Yes | LCD Supports Background image only |
+| Universal Screen 8.8" | 1920x480 | - | LCD Supports Background image only |
+
+
+\* Galahad II LCD / Vision uses the same driver as HydroShift LCD AIO.
+
+If you've tested a device that isn't marked above, please [open an issue or PR](https://github.com/sgtaziz/lian-li-linux/issues) to update this table.
 
 ## Architecture
 
@@ -51,7 +61,7 @@ lianli-gui             Slint desktop app - connects to daemon via Unix socket
 The daemon runs as a user systemd service. USB access is granted via udev rules (no root required).
 The GUI connects over `$XDG_RUNTIME_DIR/lianli-daemon.sock`.
 
-## Building
+## Installing
 
 ### Arch Linux (AUR)
 
@@ -65,70 +75,49 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 systemctl --user daemon-reload && systemctl --user start lianli-daemon
 ```
 
-### Manually
-#### Prerequisites
-1) clone the repo and submodules
+### From Source
+
+1) Clone the repo and submodules:
 ```bash
 git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && cd lian-li-linux
 ```
-> if you cloned the project without the --recurse-submodules flag, run: git submodule update --init --recursive
+> If you already cloned without `--recurse-submodules`, run: `git submodule update --init --recursive`
 
-2) install dependencies
+2) Install dependencies:
 - **Rust** (stable, 1.75+)
 - **ffmpeg** and **ffprobe** in `PATH` (for video/GIF decoding)
 - **System libraries:**
 
 ```bash
 # Arch
-sudo pacman -S hidapi libusb ffmpeg
+sudo pacman -S hidapi libusb ffmpeg fontconfig mesa libxkbcommon wayland libx11 libinput libdrm clang cmake pkg-config
 
 # Ubuntu / Debian
-sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev ffmpeg
+sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
+  libxkbcommon-dev libwayland-dev libx11-dev libinput-dev libdrm-dev \
+  libgl-dev libegl-dev clang cmake pkg-config ffmpeg
 
 # Fedora
-sudo dnf install hidapi-devel libusb1-devel fontconfig-devel ffmpeg
+sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
+  libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
+  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg
 ```
 
-3) build the project
+3) Build:
 ```bash
 cargo build --release
 ```
 
-### With Docker
+Binaries: `target/release/lianli-daemon` and `target/release/lianli-gui`
 
-1) build the docker image
-```bash
-docker build -f docker/build.Dockerfile -t lianli-linux-builder \
-  --build-arg USER_ID="$(id -u)" \
-  --build-arg GROUP_ID="$(id -g)" \
-  .
-```
-2) build the project
-```bash
-docker run --rm -it \
-  -v "$PWD:/work" \
-  -v "$PWD/target:/work/target" \
-  -v "$PWD/.cache/cargo-registry:/home/builder/.cargo/registry" \
-  -v "$PWD/.cache/cargo-git:/home/builder/.cargo/git" \
-  lianli-linux-builder
-```
-
-### Binaries: `target/release/lianli-daemon` and `target/release/lianli-gui`
-
-## Installation
-
-### 1. udev rules
-
-Required so the daemon can access USB devices without root:
-
+4) Install udev rules (required for USB access without root):
 ```bash
 sudo cp udev/99-lianli.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-### 2. Daemon
-
+5) Install and start the daemon:
 ```bash
 # Copy binary
 cp target/release/lianli-daemon ~/.local/bin/
@@ -142,8 +131,7 @@ systemctl --user enable --now lianli-daemon
 
 A default config is created automatically at `~/.config/lianli/config.json` on first run.
 
-### 3. GUI
-
+6) Install the GUI (optional):
 ```bash
 cp target/release/lianli-gui ~/.local/bin/
 
@@ -157,6 +145,27 @@ cp assets/icons/128x128@2x.png ~/.local/share/icons/hicolor/256x256/apps/lianli-
 cp lianli-gui.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/
 ```
+
+### With Docker
+
+1) Build the Docker image:
+```bash
+docker build -f docker/build.Dockerfile -t lianli-linux-builder \
+  --build-arg USER_ID="$(id -u)" \
+  --build-arg GROUP_ID="$(id -g)" \
+  .
+```
+2) Build the project:
+```bash
+docker run --rm -it \
+  -v "$PWD:/work" \
+  -v "$PWD/target:/work/target" \
+  -v "$PWD/.cache/cargo-registry:/home/builder/.cargo/registry" \
+  -v "$PWD/.cache/cargo-git:/home/builder/.cargo/git" \
+  lianli-linux-builder
+```
+
+Then follow steps 4-6 from "From Source" above.
 
 ## Configuration
 
