@@ -19,7 +19,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # USB/HID
-hidapi = "2.6"
+hidapi = { version = "2.6", default-features = false, features = ["linux-shared-hidraw"] }
 rusb = "0.9"
 
 # Crypto
