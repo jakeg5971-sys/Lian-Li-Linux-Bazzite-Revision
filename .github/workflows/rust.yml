@@ -26,16 +26,7 @@ jobs:
           libudev-dev \
           libusb-1.0-0-dev \
           libfontconfig-dev \
-          pkg-config \
-          cmake
-
-    - name: Build and install hidapi from source
-      run: |
-        git clone --depth 1 --branch hidapi-0.15.0 https://github.com/libusb/hidapi.git /tmp/hidapi
-        cd /tmp/hidapi
-        cmake -B build -DCMAKE_INSTALL_PREFIX=/usr
-        cmake --build build
-        sudo cmake --install build
+          pkg-config
 
     - name: Build
       run: cargo build --verbose

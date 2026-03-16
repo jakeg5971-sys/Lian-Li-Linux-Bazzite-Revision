@@ -1,18 +1,18 @@
-# Maintainer: sgtaziz
+# Maintainer: sgtaziz <sgtaziz013 at google dot com>
 pkgname=lianli-linux-git
-pkgver=r67.02c7f90
+pkgver=r74.ec8a512
 pkgrel=1
-pkgdesc="Open-source Linux replacement for L-Connect 3 — fan control, RGB, LCD streaming for Lian Li devices"
+pkgdesc="Open-source Linux replacement for L-Connect 3 - fan control, RGB, LCD streaming for Lian Li devices"
 arch=('x86_64')
 url="https://github.com/sgtaziz/lian-li-linux"
 license=('MIT')
-depends=('hidapi' 'libusb' 'ffmpeg' 'fontconfig' 'mesa' 'libxkbcommon' 'wayland' 'libx11' 'libinput' 'libdrm')
+depends=('libusb' 'ffmpeg' 'fontconfig' 'mesa' 'libxkbcommon' 'wayland' 'libx11' 'libinput' 'libdrm')
 makedepends=('git' 'rust' 'cargo' 'clang' 'cmake' 'pkg-config')
 provides=('lianli-linux')
 conflicts=('lianli-linux')
 source=("git+${url}.git")
 sha256sums=('SKIP')
-options=('!lto')
+options=('!debug' '!lto' 'strip')
 
 pkgver() {
   cd lian-li-linux
@@ -27,6 +27,7 @@ prepare() {
 
 build() {
   cd lian-li-linux
+  export CARGO_PROFILE_RELEASE_STRIP=symbols
   export CARGO_TARGET_DIR=target
   export SLINT_NO_QT=1
   RUSTC=/usr/bin/rustc /usr/bin/cargo build --frozen --release
