@@ -77,22 +77,22 @@ systemctl --user daemon-reload && systemctl --user start lianli-daemon
 
 ### Bazzite / Fedora Atomic (rpm-ostree)
 
-Bazzite is immutable, so install runtime dependencies in a Toolbox/Distrobox container and keep host changes limited to udev + systemd user service.
+Bazzite is immutable, so install runtime dependencies in a Distrobox container and keep host changes limited to udev + systemd user service.
 
-1) Create and enter a Fedora toolbox:
+1) Create and enter a Fedora Distrobox:
 ```bash
-toolbox create --distro fedora --release 41 lianli-build
-toolbox enter lianli-build
+distrobox create --name lianli-build --image registry.fedoraproject.org/fedora:41 --yes
+distrobox enter lianli-build
 ```
 
-2) Install build dependencies in the toolbox:
+2) Install build dependencies in the Distrobox:
 ```bash
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
   mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg git
 ```
 
-3) Build in the toolbox (from your repo checkout):
+3) Build in the Distrobox (from your repo checkout):
 ```bash
 cargo build --release
 ```
@@ -113,7 +113,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now lianli-daemon
 ```
 
-> Tip: if you prefer layering dependencies on the host instead of Toolbox, use `rpm-ostree install ...` and reboot after deployment.
+> Tip: if you prefer layering dependencies on the host instead of Distrobox, use `rpm-ostree install ...` and reboot after deployment.
 
 ### From Source
 
