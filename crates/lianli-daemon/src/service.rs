@@ -994,6 +994,9 @@ impl ServiceManager {
                 let cfg_key = config_identity(device_cfg);
                 if let Some(mut existing) = self.targets.remove(&cfg_idx) {
                     if existing.matches(&candidate.device_id, &cfg_key) {
+                        // Static images are sent once; nudge a resend during refresh to
+                        // recover displays that clear after unrelated device mode changes.
+                        existing.request_refresh();
                         new_targets.insert(cfg_idx, existing);
                         continue;
                     } else {
@@ -1204,6 +1207,12 @@ impl ActiveTarget {
 
     fn matches(&self, identity: &str, key: &ConfigKey) -> bool {
         self.device_identity == identity && key == &self.key
+    }
+
+    fn request_refresh(&mut self) {
+        if let MediaRuntime::Static { sent, .. } = &mut self.media {
+            *sent = false;
+        }
     }
 
     fn should_send(&self, now: Instant) -> bool {
