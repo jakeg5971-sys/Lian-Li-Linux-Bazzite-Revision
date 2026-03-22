@@ -313,9 +313,12 @@ fn save_config(window: &slint::Weak<crate::MainWindow>, config: AppConfig) {
     slint::invoke_from_event_loop(move || {
         if let Some(w) = window.upgrade() {
             match result {
-                Ok(_) => {
+                Ok(lianli_shared::ipc::IpcResponse::Ok { .. }) => {
                     w.set_config_dirty(false);
                     tracing::info!("Config saved successfully");
+                }
+                Ok(lianli_shared::ipc::IpcResponse::Error { message }) => {
+                    tracing::error!("Failed to save config: {message}");
                 }
                 Err(e) => {
                     tracing::error!("Failed to save config: {e}");
