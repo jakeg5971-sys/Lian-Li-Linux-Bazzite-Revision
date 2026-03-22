@@ -582,12 +582,17 @@ fn wire_fan_callbacks(
 
     {
         let shared = shared.clone();
+        let weak = window.as_weak();
         window.on_fan_set_temp_command(move |idx, cmd| {
             let mut state = shared.lock().unwrap();
             if let Some(ref mut c) = state.config {
                 if let Some(curve) = c.fan_curves.get_mut(idx as usize) {
                     curve.temp_command = cmd.to_string();
                 }
+            }
+            drop(state);
+            if let Some(w) = weak.upgrade() {
+                w.set_config_dirty(true);
             }
         });
     }
