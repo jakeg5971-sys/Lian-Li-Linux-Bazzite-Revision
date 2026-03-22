@@ -92,16 +92,24 @@ sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg git
 ```
 
-3) Build in the Distrobox (from your repo checkout):
+3) Build in the Distrobox (from the **repo root**, not inside `crates/...`):
 ```bash
-cargo build --release
+cargo build --release -p lianli-daemon -p lianli-gui
 ```
 
-4) Copy binaries to the host user path:
+4) Copy binaries to your user path:
 ```bash
 install -Dm755 target/release/lianli-daemon ~/.local/bin/lianli-daemon
 install -Dm755 target/release/lianli-gui ~/.local/bin/lianli-gui
 ```
+If you get `cannot stat 'target/release/lianli-daemon'`, you are usually in the wrong directory.
+Verify with:
+```bash
+pwd
+ls -lah target/release/lianli-daemon target/release/lianli-gui
+```
+If you built from `crates/lianli-daemon` or `crates/lianli-gui`, binaries are still written to the
+workspace root `target/release/` directory.
 
 5) On the host, install udev rules and start the user service:
 ```bash
