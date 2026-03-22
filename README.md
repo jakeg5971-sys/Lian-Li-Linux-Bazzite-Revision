@@ -75,6 +75,23 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 systemctl --user daemon-reload && systemctl --user start lianli-daemon
 ```
 
+### Fedora Atomic (Silverblue/Kinoite/Sway Atomic)
+
+Use the dedicated Atomic bootstrap script:
+
+```bash
+./scripts/fedora-atomic-bootstrap.sh
+```
+
+This keeps full feature parity (fans, RGB, LCD, sensor gauges) while fitting Atomic workflows:
+
+- Host runtime deps are layered with `rpm-ostree`
+- Builds happen inside toolbox (with `pkg-config` verification + `cargo check`)
+- Binaries and desktop files install into `~/.local`
+- Daemon runs as a user systemd service
+
+See the full guide: [`docs/fedora-atomic.md`](docs/fedora-atomic.md)
+
 ### From Source
 
 1) Clone the repo and submodules:
