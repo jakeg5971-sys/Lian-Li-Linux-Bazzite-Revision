@@ -44,6 +44,13 @@ The script will:
 
 If `rpm-ostree` adds new packages, reboot once after the script finishes.
 
+> If you see "pending deployment" or updates are "not active yet", reboot first and rerun the bootstrap script:
+>
+> ```bash
+> systemctl reboot
+> ./scripts/fedora-atomic-bootstrap.sh
+> ```
+
 ## Updating After Pulling New Changes
 
 ```bash
@@ -73,3 +80,25 @@ Launch the GUI from your app menu (`Lian Li Linux`) or run:
 ```bash
 ~/.local/bin/lianli-gui
 ```
+
+## Troubleshooting: Atomic updates not becoming active
+
+On Fedora Atomic, layered package changes from `rpm-ostree` only apply after booting into the new deployment.
+
+Check whether a deployment is pending:
+
+```bash
+rpm-ostree status --pending-exit-77
+echo $?
+```
+
+- `0` means there is no pending deployment.
+- `77` means updates are staged but inactive; reboot is required.
+
+If it returns `77`, run:
+
+```bash
+systemctl reboot
+```
+
+After reboot, run `./scripts/fedora-atomic-bootstrap.sh` again.

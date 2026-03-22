@@ -9,11 +9,30 @@ log() {
   printf '\n[%s] %s\n' "$(date +%H:%M:%S)" "$*"
 }
 
+warn() {
+  printf '\n[WARN] %s\n' "$*" >&2
+}
+
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
     echo "Error: required command '$1' is not installed." >&2
     exit 1
   }
+}
+
+pending_ostree_deployment() {
+  set +e
+  rpm-ostree status --pending-exit-77 >/dev/null 2>&1
+  local rc=$?
+  set -e
+  case "$rc" in
+    0) return 1 ;;
+    77) return 0 ;;
+    *)
+      warn "Unable to determine rpm-ostree pending deployment status (exit code: $rc)."
+      return 1
+      ;;
+  esac
 }
 
 for cmd in rpm-ostree toolbox systemctl cargo; do
@@ -22,6 +41,13 @@ done
 
 if [[ ! -f /run/ostree-booted ]]; then
   echo "This installer is designed for Fedora Atomic variants (ostree systems)." >&2
+  exit 1
+fi
+
+if pending_ostree_deployment; then
+  warn "A pending rpm-ostree deployment is already staged but not active."
+  warn "Reboot first so layered packages are active, then rerun this script."
+  warn "Suggested command: systemctl reboot"
   exit 1
 fi
 
@@ -84,4 +110,9 @@ install -D -m 0644 "$REPO_DIR/systemd/lianli-daemon.service" "$HOME/.config/syst
 systemctl --user daemon-reload
 systemctl --user enable --now lianli-daemon
 
-log "Done. Reboot if rpm-ostree layered new packages."
+if pending_ostree_deployment; then
+  warn "rpm-ostree has staged a new deployment that is not active yet."
+  warn "Please reboot now to activate the updates: systemctl reboot"
+else
+  log "Done. No pending rpm-ostree deployment detected."
+fi
