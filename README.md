@@ -75,61 +75,11 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 systemctl --user daemon-reload && systemctl --user start lianli-daemon
 ```
 
-### Bazzite / Fedora Atomic (rpm-ostree)
-
-Bazzite is immutable, so install runtime dependencies in a Distrobox container and keep host changes limited to udev + systemd user service.
-
-1) Create and enter a Fedora Distrobox:
-```bash
-distrobox create --name lianli-build --image registry.fedoraproject.org/fedora:41 --yes
-distrobox enter lianli-build
-```
-
-2) Install build dependencies in the Distrobox:
-```bash
-sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
-  libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel systemd-devel clang cmake pkg-config ffmpeg git
-```
-If `cargo build ...` fails with `failed to run custom build command for 'hidapi'`, make sure
-`systemd-devel` is installed in the Distrobox and retry.
-
-3) Build in the Distrobox (from the **repo root**, not inside `crates/...`):
-```bash
-cargo build --release -p lianli-daemon -p lianli-gui
-```
-
-4) Copy binaries to your user path:
-```bash
-install -Dm755 target/release/lianli-daemon ~/.local/bin/lianli-daemon
-install -Dm755 target/release/lianli-gui ~/.local/bin/lianli-gui
-```
-If you get `cannot stat 'target/release/lianli-daemon'`, you are usually in the wrong directory.
-Verify with:
-```bash
-pwd
-ls -lah target/release/lianli-daemon target/release/lianli-gui
-```
-If you built from `crates/lianli-daemon` or `crates/lianli-gui`, binaries are still written to the
-workspace root `target/release/` directory.
-
-5) On the host, install udev rules and start the user service:
-```bash
-sudo install -Dm644 udev/99-lianli.rules /etc/udev/rules.d/99-lianli.rules
-sudo udevadm control --reload-rules && sudo udevadm trigger
-mkdir -p ~/.config/systemd/user
-cp systemd/lianli-daemon.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now lianli-daemon
-```
-
-> Tip: if you prefer layering dependencies on the host instead of Distrobox, use `rpm-ostree install ...` and reboot after deployment.
-
 ### From Source
 
 1) Clone the repo and submodules:
 ```bash
-git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd Lian-Li-Linux-Bazzite-Revision
+git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd lian-li-linux
 ```
 > If you already cloned without `--recurse-submodules`, run: `git submodule update --init --recursive`
 
@@ -150,7 +100,7 @@ sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
 # Fedora
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel systemd-devel clang cmake pkg-config ffmpeg
+  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg
 ```
 
 3) Build:
@@ -179,12 +129,6 @@ systemctl --user daemon-reload
 systemctl --user enable --now lianli-daemon
 ```
 
-If `~/.local/bin` is not already in your `PATH`, add it before running the binaries manually:
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
 A default config is created automatically at `~/.config/lianli/config.json` on first run.
 
 6) Install the GUI (optional):
@@ -200,15 +144,6 @@ cp assets/icons/128x128@2x.png ~/.local/share/icons/hicolor/256x256/apps/lianli-
 # Install desktop entry
 cp lianli-gui.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/
-```
-
-7) Launch and verify:
-```bash
-# Start GUI
-lianli-gui
-
-# Verify daemon is active
-systemctl --user status lianli-daemon
 ```
 
 ### With Docker
