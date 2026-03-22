@@ -255,6 +255,11 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
             lianli_shared::config::HidDriver::Hidapi => "HIDAPI",
             lianli_shared::config::HidDriver::Rusb => "Rusb",
         };
+        let update_channel = match config.update.channel {
+            lianli_shared::config::UpdateChannel::Stable => "stable",
+            lianli_shared::config::UpdateChannel::Nightly => "nightly",
+        };
+        let auto_update_enabled = config.update.enabled;
 
         let window = window.clone();
         slint::invoke_from_event_loop(move || {
@@ -267,6 +272,8 @@ fn load_config(window: &slint::Weak<crate::MainWindow>, shared: &crate::Shared) 
                 w.set_openrgb_enabled(openrgb_enabled);
                 w.set_openrgb_port(openrgb_port);
                 w.set_hid_driver(slint::SharedString::from(hid_driver));
+                w.set_auto_update_enabled(auto_update_enabled);
+                w.set_update_channel(slint::SharedString::from(update_channel));
 
                 // LCD entries
                 let lcd_model = conversions::lcd_entries_to_model(&config.lcds, &devices);

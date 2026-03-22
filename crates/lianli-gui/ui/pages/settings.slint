@@ -15,11 +15,15 @@ export component SettingsPage inherits VerticalLayout {
     in property <int> openrgb-port: 6743;
     in property <string> openrgb-error: "";
     in property <string> hid-driver: "HIDAPI";
+    in property <bool> auto-update-enabled: false;
+    in property <string> update-channel: "stable";
 
     callback toggle-openrgb(bool);
     callback set-default-fps(int);
     callback set-openrgb-port(int);
     callback set-hid-driver(string);
+    callback toggle-auto-update(bool);
+    callback set-update-channel(string);
     callback save-config();
 
     PageHeader {
@@ -142,6 +146,40 @@ export component SettingsPage inherits VerticalLayout {
                         text: "\{root.lcd-count} LCD entries, \{root.fan-curve-count} fan curves";
                         font-size: 12px;
                         color: Theme.text-secondary;
+                    }
+                }
+            }
+
+            Card {
+                VerticalLayout {
+                    spacing: 8px;
+
+                    Text {
+                        text: "Updates";
+                        font-size: 16px;
+                        font-weight: 600;
+                        color: Theme.text-primary;
+                    }
+
+                    CheckBox {
+                        text: "Enable automatic updates";
+                        checked: root.auto-update-enabled;
+                        toggled => { root.toggle-auto-update(self.checked); }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Text {
+                            text: "Update channel:";
+                            font-size: 14px;
+                            color: Theme.text-primary;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: ["stable", "nightly"];
+                            current-value: root.update-channel;
+                            selected(val) => { root.set-update-channel(val); }
+                        }
                     }
                 }
             }

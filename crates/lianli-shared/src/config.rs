@@ -88,6 +88,51 @@ pub enum HidDriver {
     Rusb,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    Stable,
+    Nightly,
+}
+
+impl Default for UpdateChannel {
+    fn default() -> Self {
+        Self::Stable
+    }
+}
+
+impl UpdateChannel {
+    pub fn branch_name(self) -> &'static str {
+        match self {
+            Self::Stable => "main",
+            Self::Nightly => "nightly",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct UpdateConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub channel: UpdateChannel,
+    #[serde(default = "default_update_interval_secs")]
+    pub interval_secs: u64,
+    #[serde(default)]
+    pub repository_path: Option<PathBuf>,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            channel: UpdateChannel::default(),
+            interval_secs: default_update_interval_secs(),
+            repository_path: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AppConfig {
     #[serde(default = "default_fps")]
@@ -102,6 +147,8 @@ pub struct AppConfig {
     pub fans: Option<FanConfig>,
     #[serde(default)]
     pub rgb: Option<RgbAppConfig>,
+    #[serde(default)]
+    pub update: UpdateConfig,
 }
 
 impl Default for AppConfig {
@@ -113,6 +160,7 @@ impl Default for AppConfig {
             fan_curves: Vec::new(),
             fans: None,
             rgb: None,
+            update: UpdateConfig::default(),
         }
     }
 }
@@ -125,6 +173,10 @@ impl Default for HidDriver {
 
 fn default_fps() -> f32 {
     30.0
+}
+
+fn default_update_interval_secs() -> u64 {
+    300
 }
 
 impl AppConfig {
@@ -178,6 +230,9 @@ impl AppConfig {
 
         if cfg.default_fps <= 0.0 {
             bail!("default_fps must be greater than zero");
+        }
+        if cfg.update.interval_secs == 0 {
+            bail!("update.interval_secs must be greater than zero");
         }
 
         // Normalize orientations to nearest 90°
