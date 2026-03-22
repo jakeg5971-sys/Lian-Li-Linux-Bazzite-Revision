@@ -79,7 +79,7 @@ systemctl --user daemon-reload && systemctl --user start lianli-daemon
 
 1) Clone the repo and submodules:
 ```bash
-git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && cd lian-li-linux
+git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd lian-li-linux
 ```
 > If you already cloned without `--recurse-submodules`, run: `git submodule update --init --recursive`
 
