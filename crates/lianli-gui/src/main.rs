@@ -113,6 +113,37 @@ fn main() {
         });
     }
 
+    // ── Toggle auto update ──
+    {
+        let shared = shared.clone();
+        let weak = window.as_weak();
+        window.on_toggle_auto_update(move |enabled| {
+            let mut state = shared.lock().unwrap();
+            if let Some(ref mut c) = state.config {
+                c.update.enabled = enabled;
+            }
+            drop(state);
+            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+        });
+    }
+
+    // ── Set update channel ──
+    {
+        let shared = shared.clone();
+        let weak = window.as_weak();
+        window.on_set_update_channel(move |channel| {
+            let mut state = shared.lock().unwrap();
+            if let Some(ref mut c) = state.config {
+                c.update.channel = match channel.as_str() {
+                    "nightly" => lianli_shared::config::UpdateChannel::Nightly,
+                    _ => lianli_shared::config::UpdateChannel::Stable,
+                };
+            }
+            drop(state);
+            if let Some(w) = weak.upgrade() { w.set_config_dirty(true); }
+        });
+    }
+
     // ── Set fan update interval ──
     {
         let shared = shared.clone();

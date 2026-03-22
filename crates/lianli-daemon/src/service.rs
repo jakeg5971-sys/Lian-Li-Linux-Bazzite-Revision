@@ -5,28 +5,28 @@ use crate::rgb_controller::RgbController;
 use anyhow::Result;
 use lianli_devices::crypto::PacketBuilder;
 use lianli_devices::detect::{
-    create_hid_lcd_device, create_wired_controllers,
-    ensure_hid_devices_bound, enumerate_devices, enumerate_hid_devices,
-    open_hid_backend_hidapi, open_hid_backend_rusb, open_hid_lcd_by_vid_pid,
+    create_hid_lcd_device, create_wired_controllers, ensure_hid_devices_bound, enumerate_devices,
+    enumerate_hid_devices, open_hid_backend_hidapi, open_hid_backend_rusb, open_hid_lcd_by_vid_pid,
     open_hid_lcd_device_rusb,
 };
-use lianli_shared::config::HidDriver;
-use lianli_transport::HidBackend;
 use lianli_devices::hydroshift_lcd::HydroShiftLcdController;
 use lianli_devices::slv3_lcd::Slv3LcdDevice;
 use lianli_devices::traits::FanDevice;
 use lianli_devices::winusb_lcd::WinUsbLcdDevice;
 use lianli_devices::wireless::WirelessController;
-use lianli_shared::device_id::DeviceFamily;
 use lianli_media::{prepare_media_asset, MediaAsset, SensorAsset};
 use lianli_shared::config::{config_identity, AppConfig, ConfigKey};
+use lianli_shared::config::{HidDriver, UpdateChannel};
+use lianli_shared::device_id::DeviceFamily;
 use lianli_shared::ipc::DeviceInfo;
 use lianli_shared::media::MediaType;
 use lianli_shared::screen::{screen_info_for, ScreenInfo};
+use lianli_transport::HidBackend;
 use parking_lot::Mutex;
 use rusb::Device;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -58,6 +58,7 @@ pub struct ServiceManager {
     hid_backends: HashMap<String, Arc<Mutex<HidBackend>>>,
     last_device_scan: Instant,
     last_usb_enum: Instant,
+    last_update_check: Instant,
     /// Cached USB device list from enumerate_devices() — refreshed every USB_ENUM_INTERVAL.
     cached_usb_devices: Vec<DeviceInfo>,
     running: bool,
@@ -90,6 +91,7 @@ impl ServiceManager {
             hid_backends: HashMap::new(),
             last_device_scan: Instant::now() - DEVICE_POLL_INTERVAL,
             last_usb_enum: Instant::now() - USB_ENUM_INTERVAL,
+            last_update_check: Instant::now(),
             cached_usb_devices: Vec::new(),
             running: true,
             restart_requested: false,
@@ -99,7 +101,9 @@ impl ServiceManager {
             openrgb_stop: Arc::new(AtomicBool::new(false)),
             openrgb_thread: None,
             openrgb_state: Arc::new(Mutex::new(openrgb_server::OpenRgbServerState::default())),
-            direct_color_buffer: Arc::new(Mutex::new(crate::rgb_controller::DirectColorBuffer::new())),
+            direct_color_buffer: Arc::new(Mutex::new(
+                crate::rgb_controller::DirectColorBuffer::new(),
+            )),
             direct_color_writer: None,
         })
     }
@@ -142,7 +146,8 @@ impl ServiceManager {
             return Ok(Arc::clone(backend));
         }
         let backend = open_hid_backend_hidapi(api, det)?;
-        self.hid_backends.insert(key.to_string(), Arc::clone(&backend));
+        self.hid_backends
+            .insert(key.to_string(), Arc::clone(&backend));
         Ok(backend)
     }
 
@@ -230,6 +235,12 @@ impl ServiceManager {
                     self.refresh_usb_device_cache();
                 }
                 self.sync_ipc_telemetry();
+            }
+
+            if self.check_for_repository_updates(now) {
+                self.restart_requested = true;
+                self.running = false;
+                break;
             }
 
             self.stream_targets();
@@ -353,7 +364,8 @@ impl ServiceManager {
                 has_rgb: true, // All wireless fans have RGB LEDs
                 fan_count: Some(dev.fan_count),
                 per_fan_control: Some(true),
-                mb_sync_support: dev.fan_type.supports_hw_mobo_sync() || self.wireless.motherboard_pwm().is_some(),
+                mb_sync_support: dev.fan_type.supports_hw_mobo_sync()
+                    || self.wireless.motherboard_pwm().is_some(),
                 rgb_zone_count: Some(dev.fan_count), // One zone per fan
                 screen_width: None,
                 screen_height: None,
@@ -498,8 +510,13 @@ impl ServiceManager {
                 };
                 if let Some(result) = create_wired_controllers(det.family, det.pid, backend) {
                     self.register_wired_controllers(
-                        &base_id, det.name, det.family, det.serial.as_deref(),
-                        result, &mut fan_devices, &mut wired_rgb,
+                        &base_id,
+                        det.name,
+                        det.family,
+                        det.serial.as_deref(),
+                        result,
+                        &mut fan_devices,
+                        &mut wired_rgb,
                     );
                 }
             }
@@ -524,8 +541,13 @@ impl ServiceManager {
                 };
                 if let Some(result) = create_wired_controllers(det.family, det.pid, backend) {
                     self.register_wired_controllers(
-                        &base_id, det.name, det.family, det.serial.as_deref(),
-                        result, &mut fan_devices, &mut wired_rgb,
+                        &base_id,
+                        det.name,
+                        det.family,
+                        det.serial.as_deref(),
+                        result,
+                        &mut fan_devices,
+                        &mut wired_rgb,
                     );
                 }
             }
@@ -642,8 +664,8 @@ impl ServiceManager {
 
         // Check if we need to restart (port changed or toggled)
         let current_state = self.openrgb_state.lock().clone();
-        let needs_restart = self.openrgb_thread.is_some()
-            && (current_state.port != Some(port) || !enabled);
+        let needs_restart =
+            self.openrgb_thread.is_some() && (current_state.port != Some(port) || !enabled);
 
         if needs_restart {
             info!("Stopping OpenRGB server for reconfiguration");
@@ -677,29 +699,25 @@ impl ServiceManager {
             ));
             // Start the async writer thread that flushes buffered colors at 30fps
             if self.direct_color_writer.is_none() {
-                self.direct_color_writer =
-                    Some(crate::rgb_controller::start_direct_color_writer(
-                        Arc::clone(rgb),
-                        Arc::clone(&self.direct_color_buffer),
-                        Arc::clone(&self.openrgb_stop),
-                    ));
+                self.direct_color_writer = Some(crate::rgb_controller::start_direct_color_writer(
+                    Arc::clone(rgb),
+                    Arc::clone(&self.direct_color_buffer),
+                    Arc::clone(&self.openrgb_stop),
+                ));
             }
         }
     }
 
-
     /// Try to connect wireless TX/RX once. Non-blocking — if no dongles found, skip gracefully.
     fn try_wireless(&mut self) {
         match self.wireless.connect() {
-            Ok(()) => {
-                match self.wireless.start_polling() {
-                    Ok(()) => {
-                        let _ = self.wireless.send_rx_sequence();
-                        info!("Wireless links active");
-                    }
-                    Err(err) => warn!("[wireless] polling start failed: {err}"),
+            Ok(()) => match self.wireless.start_polling() {
+                Ok(()) => {
+                    let _ = self.wireless.send_rx_sequence();
+                    info!("Wireless links active");
                 }
-            }
+                Err(err) => warn!("[wireless] polling start failed: {err}"),
+            },
             Err(_) => {
                 debug!("[wireless] no TX/RX devices found, skipping wireless");
             }
@@ -729,6 +747,108 @@ impl ServiceManager {
             }
             Err(err) => {
                 warn!("Failed to load config: {err}");
+                false
+            }
+        }
+    }
+
+    fn run_git_command(repo: &std::path::Path, args: &[&str]) -> anyhow::Result<String> {
+        let output = Command::new("git")
+            .args(["-C", &repo.to_string_lossy()])
+            .args(args)
+            .output()?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("git {} failed: {}", args.join(" "), stderr.trim());
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    fn check_for_repository_updates(&mut self, now: Instant) -> bool {
+        let Some(cfg) = self.config.as_ref() else {
+            return false;
+        };
+        if !cfg.update.enabled {
+            return false;
+        }
+
+        let interval = Duration::from_secs(cfg.update.interval_secs.max(30));
+        if now.duration_since(self.last_update_check) < interval {
+            return false;
+        }
+        self.last_update_check = now;
+
+        let repo_path = cfg.update.repository_path.clone().or_else(|| {
+            std::env::var("LIANLI_REPOSITORY_PATH")
+                .ok()
+                .map(PathBuf::from)
+        });
+        let Some(repo_path) = repo_path else {
+            warn!("Update channel is enabled but no repository path is configured");
+            return false;
+        };
+
+        let channel = cfg.update.channel;
+        let branch = channel.branch_name();
+        if let Err(err) = Self::run_git_command(&repo_path, &["fetch", "origin", branch, "--quiet"])
+        {
+            warn!(
+                "Update check failed for {} channel: {err}",
+                match channel {
+                    UpdateChannel::Stable => "stable",
+                    UpdateChannel::Nightly => "nightly",
+                }
+            );
+            return false;
+        }
+
+        let local = match Self::run_git_command(&repo_path, &["rev-parse", "HEAD"]) {
+            Ok(v) => v,
+            Err(err) => {
+                warn!("Unable to read local commit hash: {err}");
+                return false;
+            }
+        };
+        let remote_ref = format!("origin/{branch}");
+        let remote = match Self::run_git_command(&repo_path, &["rev-parse", &remote_ref]) {
+            Ok(v) => v,
+            Err(err) => {
+                warn!("Unable to read remote commit hash: {err}");
+                return false;
+            }
+        };
+
+        if local == remote {
+            debug!("No repository updates available on {branch}");
+            return false;
+        }
+
+        let dirty = match Self::run_git_command(&repo_path, &["status", "--porcelain"]) {
+            Ok(v) => v,
+            Err(err) => {
+                warn!("Unable to check repository status: {err}");
+                return false;
+            }
+        };
+        if !dirty.is_empty() {
+            warn!(
+                "Skipping automatic update because repository {} has uncommitted changes",
+                repo_path.display()
+            );
+            return false;
+        }
+
+        match Self::run_git_command(&repo_path, &["pull", "--ff-only", "origin", branch]) {
+            Ok(output) => {
+                info!(
+                    "Applied update from {branch} channel in {}: {}",
+                    repo_path.display(),
+                    output.replace('\n', " ")
+                );
+                true
+            }
+            Err(err) => {
+                warn!("Automatic update failed: {err}");
                 false
             }
         }
@@ -770,7 +890,11 @@ impl ServiceManager {
                             MediaType::Color => info!("Prepared color frame for LCD[{device_id}]"),
                             MediaType::Sensor => info!(
                                 "Prepared sensor for LCD[{device_id}]: {}",
-                                device.sensor.as_ref().map(|s| s.label.as_str()).unwrap_or("<unknown>")
+                                device
+                                    .sensor
+                                    .as_ref()
+                                    .map(|s| s.label.as_str())
+                                    .unwrap_or("<unknown>")
                             ),
                         }
                     }
@@ -813,7 +937,11 @@ impl ServiceManager {
                     continue;
                 }
                 let device_id = det.device_id();
-                let transport = if lianli_shared::device_id::uses_hid(det.family) { "HID" } else { "USB bulk" };
+                let transport = if lianli_shared::device_id::uses_hid(det.family) {
+                    "HID"
+                } else {
+                    "USB bulk"
+                };
                 debug!(
                     "LCD candidate: {} ({:04x}:{:04x}) id={device_id} ({transport})",
                     det.name, det.vid, det.pid
@@ -893,7 +1021,11 @@ impl ServiceManager {
                     DeviceFamily::HydroShiftLcd | DeviceFamily::Galahad2Lcd => {
                         // Try to reuse a shared HID backend (opened by init_rgb_controller).
                         if let Some(backend) = self.hid_backends.get(&candidate.device_id) {
-                            match create_hid_lcd_device(candidate.family, candidate.pid, Arc::clone(backend)) {
+                            match create_hid_lcd_device(
+                                candidate.family,
+                                candidate.pid,
+                                Arc::clone(backend),
+                            ) {
                                 Some(result) => result.map(LcdBackend::HidLcd),
                                 None => Err(anyhow::anyhow!("Not an LCD device")),
                             }
@@ -915,12 +1047,8 @@ impl ServiceManager {
                                 None => Err(anyhow::anyhow!("Not an LCD device")),
                             }
                         } else {
-                            open_hid_lcd_by_vid_pid(
-                                candidate.vid,
-                                candidate.pid,
-                                candidate.family,
-                            )
-                            .map(LcdBackend::HidLcd)
+                            open_hid_lcd_by_vid_pid(candidate.vid, candidate.pid, candidate.family)
+                                .map(LcdBackend::HidLcd)
                         }
                     }
                     _ => unreachable!(),
@@ -934,7 +1062,13 @@ impl ServiceManager {
                             candidate.device_id,
                             device_cfg.orientation
                         );
-                        let target = ActiveTarget::new(cfg_idx, cfg_key, candidate.device_id.clone(), lcd, asset);
+                        let target = ActiveTarget::new(
+                            cfg_idx,
+                            cfg_key,
+                            candidate.device_id.clone(),
+                            lcd,
+                            asset,
+                        );
                         new_targets.insert(cfg_idx, target);
                     }
                     Err(err) => {
@@ -997,9 +1131,7 @@ impl ServiceManager {
             warn!("LCD[{index}] USB error: {err}");
             target.stop();
         }
-        if matches!(err, lianli_transport::TransportError::Timeout)
-            && self.recover_wireless()
-        {
+        if matches!(err, lianli_transport::TransportError::Timeout) && self.recover_wireless() {
             info!("Wireless link recovered");
         }
     }
@@ -1052,7 +1184,13 @@ struct ActiveTarget {
 }
 
 impl ActiveTarget {
-    fn new(index: usize, key: ConfigKey, device_identity: String, lcd: LcdBackend, asset: &MediaAsset) -> Self {
+    fn new(
+        index: usize,
+        key: ConfigKey,
+        device_identity: String,
+        lcd: LcdBackend,
+        asset: &MediaAsset,
+    ) -> Self {
         Self {
             index,
             key,
@@ -1094,11 +1232,12 @@ impl ActiveTarget {
         } else {
             self.lcd.send_frame(wireless, builder, frame)
         };
-        result
-            .map_err(|err| match err.downcast::<lianli_transport::TransportError>() {
+        result.map_err(
+            |err| match err.downcast::<lianli_transport::TransportError>() {
                 Ok(usb) => SendError::Usb(usb),
                 Err(other) => SendError::Other(other),
-            })?;
+            },
+        )?;
 
         self.media.advance_schedule(&mut self.next_due);
         self.frame_counter += 1;

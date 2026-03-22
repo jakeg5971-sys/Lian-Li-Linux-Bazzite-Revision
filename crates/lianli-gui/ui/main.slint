@@ -35,6 +35,8 @@ export component MainWindow inherits Window {
     in property <int> openrgb-port: 6743;
     in property <string> openrgb-error: "";
     in property <string> hid-driver: "HIDAPI";
+    in property <bool> auto-update-enabled: false;
+    in property <string> update-channel: "stable";
 
     // LCD properties
     in property <[LcdEntryData]> lcd-entries: [];
@@ -58,6 +60,8 @@ export component MainWindow inherits Window {
     callback set-default-fps(int);
     callback set-openrgb-port(int);
     callback set-hid-driver(string);
+    callback toggle-auto-update(bool);
+    callback set-update-channel(string);
 
     // LCD callbacks
     callback add-lcd();
@@ -179,10 +183,14 @@ export component MainWindow inherits Window {
                 openrgb-port: root.openrgb-port;
                 openrgb-error: root.openrgb-error;
                 hid-driver: root.hid-driver;
+                auto-update-enabled: root.auto-update-enabled;
+                update-channel: root.update-channel;
                 toggle-openrgb(enabled) => { root.toggle-openrgb(enabled); }
                 set-default-fps(fps) => { root.set-default-fps(fps); }
                 set-openrgb-port(port) => { root.set-openrgb-port(port); }
                 set-hid-driver(driver) => { root.set-hid-driver(driver); }
+                toggle-auto-update(enabled) => { root.toggle-auto-update(enabled); }
+                set-update-channel(channel) => { root.set-update-channel(channel); }
                 save-config => { root.save-config(); }
             }
         }
