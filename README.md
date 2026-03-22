@@ -79,7 +79,7 @@ systemctl --user daemon-reload && systemctl --user start lianli-daemon
 
 1) Clone the repo and submodules:
 ```bash
-git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd lian-li-linux
+git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd Lian-Li-Linux-Bazzite-Revision
 ```
 > If you already cloned without `--recurse-submodules`, run: `git submodule update --init --recursive`
 
@@ -90,7 +90,7 @@ git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Ba
 
 ```bash
 # Arch
-sudo pacman -S hidapi libusb ffmpeg fontconfig mesa libxkbcommon wayland libx11 libinput libdrm clang cmake pkg-config
+sudo pacman -S hidapi libusb ffmpeg fontconfig mesa libxkbcommon wayland libx11 libinput libdrm clang cmake pkg-config systemd
 
 # Ubuntu / Debian
 sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
@@ -100,7 +100,7 @@ sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
 # Fedora
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg
+  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg systemd-devel
 ```
 
 3) Build:
