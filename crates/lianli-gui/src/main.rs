@@ -9,6 +9,7 @@ use lianli_shared::rgb::{
     RgbAppConfig, RgbDeviceConfig, RgbDirection, RgbEffect, RgbMode, RgbScope, RgbZoneConfig,
 };
 use slint::{Model, ModelRc, VecModel};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 slint::include_modules!();
@@ -887,7 +888,7 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                                     _ => lcd.media_type,
                                 };
                             }
-                            "path" => lcd.path = Some(std::path::PathBuf::from(val)),
+                            "path" => lcd.path = Some(normalize_media_path(PathBuf::from(val))),
                             "orientation" => lcd.orientation = val.parse().unwrap_or(0.0),
                             "sensor_label" => {
                                 lcd.sensor.get_or_insert_with(default_sensor).label = val;
@@ -1112,7 +1113,7 @@ fn wire_lcd_callbacks(window: &MainWindow, shared: &Shared) {
                         let mut state = shared2.lock().unwrap();
                         if let Some(ref mut c) = state.config {
                             if let Some(lcd) = c.lcds.get_mut(idx) {
-                                lcd.path = Some(path);
+                                lcd.path = Some(normalize_media_path(path));
                             }
                         }
                     }
@@ -1172,6 +1173,10 @@ fn refresh_lcd_ui(weak: &slint::Weak<MainWindow>, shared: &Shared) {
         }
     })
     .ok();
+}
+
+fn normalize_media_path(path: PathBuf) -> PathBuf {
+    std::fs::canonicalize(&path).unwrap_or(path)
 }
 
 fn default_sensor() -> lianli_shared::media::SensorDescriptor {
