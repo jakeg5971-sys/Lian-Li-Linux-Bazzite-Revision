@@ -830,12 +830,18 @@ impl ServiceManager {
                 return false;
             }
         };
-        if !dirty.is_empty() {
+        if !dirty.is_empty() && !cfg.update.force_on_dirty {
             warn!(
                 "Skipping automatic update because repository {} has uncommitted changes",
                 repo_path.display()
             );
             return false;
+        }
+        if !dirty.is_empty() && cfg.update.force_on_dirty {
+            warn!(
+                "Repository {} has uncommitted changes; forcing update as configured",
+                repo_path.display()
+            );
         }
 
         match Self::run_git_command(&repo_path, &["pull", "--ff-only", "origin", branch]) {

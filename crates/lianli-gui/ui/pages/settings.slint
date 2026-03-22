@@ -17,6 +17,7 @@ export component SettingsPage inherits VerticalLayout {
     in property <string> hid-driver: "HIDAPI";
     in property <bool> auto-update-enabled: false;
     in property <string> update-channel: "stable";
+    in property <bool> force-update-on-dirty: false;
 
     callback toggle-openrgb(bool);
     callback set-default-fps(int);
@@ -24,6 +25,7 @@ export component SettingsPage inherits VerticalLayout {
     callback set-hid-driver(string);
     callback toggle-auto-update(bool);
     callback set-update-channel(string);
+    callback set-force-update-on-dirty(bool);
     callback save-config();
 
     PageHeader {
@@ -165,6 +167,12 @@ export component SettingsPage inherits VerticalLayout {
                         text: "Enable automatic updates";
                         checked: root.auto-update-enabled;
                         toggled => { root.toggle-auto-update(self.checked); }
+                    }
+
+                    CheckBox {
+                        text: "Force update when repository has local changes";
+                        checked: root.force-update-on-dirty;
+                        toggled => { root.set-force-update-on-dirty(self.checked); }
                     }
 
                     HorizontalLayout {

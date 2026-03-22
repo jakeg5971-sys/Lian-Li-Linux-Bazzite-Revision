@@ -37,6 +37,7 @@ export component MainWindow inherits Window {
     in property <string> hid-driver: "HIDAPI";
     in property <bool> auto-update-enabled: false;
     in property <string> update-channel: "stable";
+    in property <bool> force-update-on-dirty: false;
 
     // LCD properties
     in property <[LcdEntryData]> lcd-entries: [];
@@ -62,6 +63,7 @@ export component MainWindow inherits Window {
     callback set-hid-driver(string);
     callback toggle-auto-update(bool);
     callback set-update-channel(string);
+    callback set-force-update-on-dirty(bool);
 
     // LCD callbacks
     callback add-lcd();
@@ -185,12 +187,14 @@ export component MainWindow inherits Window {
                 hid-driver: root.hid-driver;
                 auto-update-enabled: root.auto-update-enabled;
                 update-channel: root.update-channel;
+                force-update-on-dirty: root.force-update-on-dirty;
                 toggle-openrgb(enabled) => { root.toggle-openrgb(enabled); }
                 set-default-fps(fps) => { root.set-default-fps(fps); }
                 set-openrgb-port(port) => { root.set-openrgb-port(port); }
                 set-hid-driver(driver) => { root.set-hid-driver(driver); }
                 toggle-auto-update(enabled) => { root.toggle-auto-update(enabled); }
                 set-update-channel(channel) => { root.set-update-channel(channel); }
+                set-force-update-on-dirty(enabled) => { root.set-force-update-on-dirty(enabled); }
                 save-config => { root.save-config(); }
             }
         }

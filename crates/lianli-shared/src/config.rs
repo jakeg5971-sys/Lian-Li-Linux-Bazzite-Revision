@@ -119,6 +119,8 @@ pub struct UpdateConfig {
     #[serde(default = "default_update_interval_secs")]
     pub interval_secs: u64,
     #[serde(default)]
+    pub force_on_dirty: bool,
+    #[serde(default)]
     pub repository_path: Option<PathBuf>,
 }
 
@@ -128,6 +130,7 @@ impl Default for UpdateConfig {
             enabled: false,
             channel: UpdateChannel::default(),
             interval_secs: default_update_interval_secs(),
+            force_on_dirty: false,
             repository_path: None,
         }
     }
