@@ -75,6 +75,56 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 systemctl --user daemon-reload && systemctl --user start lianli-daemon
 ```
 
+### Bazzite / Fedora Atomic
+
+Bazzite is an immutable Fedora Atomic desktop, so package layering and host file changes are handled a little differently.
+
+1) Install build/runtime dependencies on the host (layered packages):
+```bash
+rpm-ostree install hidapi libusb1 ffmpeg fontconfig libxkbcommon wayland libX11 libinput libdrm mesa-libGL mesa-libEGL clang cmake pkgconf-pkg-config
+systemctl reboot
+```
+
+2) Build the project (recommended in a Toolbox/Distrobox container):
+```bash
+toolbox create --release f41 lianli-build
+toolbox enter lianli-build
+sudo dnf install -y hidapi-devel libusb1-devel fontconfig-devel libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel mesa-libGL-devel mesa-libEGL-devel clang cmake pkgconf-pkg-config ffmpeg
+git clone --recurse-submodules https://github.com/sgtaziz/lian-li-linux.git && cd lian-li-linux
+cargo build --release
+```
+
+3) Copy binaries to your host user:
+```bash
+install -Dm755 target/release/lianli-daemon ~/.local/bin/lianli-daemon
+install -Dm755 target/release/lianli-gui ~/.local/bin/lianli-gui
+```
+
+4) Install udev rules on the host (requires sudo):
+```bash
+sudo install -Dm644 udev/99-lianli.rules /etc/udev/rules.d/99-lianli.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+```
+
+5) Install and enable the user daemon service:
+```bash
+install -Dm644 systemd/lianli-daemon.service ~/.config/systemd/user/lianli-daemon.service
+systemctl --user daemon-reload
+systemctl --user enable --now lianli-daemon
+```
+
+6) Install desktop entry and icons (optional):
+```bash
+install -Dm644 lianli-gui.desktop ~/.local/share/applications/lianli-gui.desktop
+install -Dm644 assets/icons/32x32.png ~/.local/share/icons/hicolor/32x32/apps/lianli-gui.png
+install -Dm644 assets/icons/128x128.png ~/.local/share/icons/hicolor/128x128/apps/lianli-gui.png
+install -Dm644 assets/icons/128x128@2x.png ~/.local/share/icons/hicolor/256x256/apps/lianli-gui.png
+update-desktop-database ~/.local/share/applications/ || true
+```
+
+If you prefer not to layer build dependencies on the host, keep them inside Toolbox and only copy final binaries plus rules/service files to the host.
+
 ### From Source
 
 1) Clone the repo and submodules:
