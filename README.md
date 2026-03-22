@@ -75,11 +75,51 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 systemctl --user daemon-reload && systemctl --user start lianli-daemon
 ```
 
+### Bazzite / Fedora Atomic (rpm-ostree)
+
+Bazzite is immutable, so install runtime dependencies in a Toolbox/Distrobox container and keep host changes limited to udev + systemd user service.
+
+1) Create and enter a Fedora toolbox:
+```bash
+toolbox create --distro fedora --release 41 lianli-build
+toolbox enter lianli-build
+```
+
+2) Install build dependencies in the toolbox:
+```bash
+sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
+  libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
+  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg git
+```
+
+3) Build in the toolbox (from your repo checkout):
+```bash
+cargo build --release
+```
+
+4) Copy binaries to the host user path:
+```bash
+install -Dm755 target/release/lianli-daemon ~/.local/bin/lianli-daemon
+install -Dm755 target/release/lianli-gui ~/.local/bin/lianli-gui
+```
+
+5) On the host, install udev rules and start the user service:
+```bash
+sudo install -Dm644 udev/99-lianli.rules /etc/udev/rules.d/99-lianli.rules
+sudo udevadm control --reload-rules && sudo udevadm trigger
+mkdir -p ~/.config/systemd/user
+cp systemd/lianli-daemon.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now lianli-daemon
+```
+
+> Tip: if you prefer layering dependencies on the host instead of Toolbox, use `rpm-ostree install ...` and reboot after deployment.
+
 ### From Source
 
 1) Clone the repo and submodules:
 ```bash
-git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd lian-li-linux
+git clone --recurse-submodules https://github.com/jakeg5971-sys/Lian-Li-Linux-Bazzite-Revision.git && cd Lian-Li-Linux-Bazzite-Revision
 ```
 > If you already cloned without `--recurse-submodules`, run: `git submodule update --init --recursive`
 
