@@ -91,6 +91,8 @@ sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
   mesa-libGL-devel mesa-libEGL-devel systemd-devel clang cmake pkg-config ffmpeg git
 ```
+If `cargo build ...` fails with `failed to run custom build command for 'hidapi'`, make sure
+`systemd-devel` is installed in the Distrobox and retry.
 
 3) Build in the Distrobox (from the **repo root**, not inside `crates/...`):
 ```bash
@@ -110,9 +112,6 @@ ls -lah target/release/lianli-daemon target/release/lianli-gui
 ```
 If you built from `crates/lianli-daemon` or `crates/lianli-gui`, binaries are still written to the
 workspace root `target/release/` directory.
-If `cargo build ...` fails on Fedora/Bazzite with
-`failed to run custom build command for 'hidapi'`, install `systemd-devel` in the
-Distrobox and retry the build.
 
 5) On the host, install udev rules and start the user service:
 ```bash
