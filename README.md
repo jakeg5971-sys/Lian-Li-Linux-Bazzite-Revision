@@ -169,6 +169,12 @@ systemctl --user daemon-reload
 systemctl --user enable --now lianli-daemon
 ```
 
+If `~/.local/bin` is not already in your `PATH`, add it before running the binaries manually:
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
 A default config is created automatically at `~/.config/lianli/config.json` on first run.
 
 6) Install the GUI (optional):
@@ -184,6 +190,15 @@ cp assets/icons/128x128@2x.png ~/.local/share/icons/hicolor/256x256/apps/lianli-
 # Install desktop entry
 cp lianli-gui.desktop ~/.local/share/applications/
 update-desktop-database ~/.local/share/applications/
+```
+
+7) Launch and verify:
+```bash
+# Start GUI
+lianli-gui
+
+# Verify daemon is active
+systemctl --user status lianli-daemon
 ```
 
 ### With Docker
