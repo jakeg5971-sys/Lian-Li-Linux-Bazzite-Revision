@@ -245,6 +245,10 @@ journalctl --user -u lianli-daemon -f
 # Verify daemon is running
 systemctl --user status lianli-daemon
 
+# If status shows "lianli-daemon: command not found", reload the updated unit and restart
+systemctl --user daemon-reload
+systemctl --user restart lianli-daemon
+
 # Check socket exists
 ls -la $XDG_RUNTIME_DIR/lianli-daemon.sock
 ```
