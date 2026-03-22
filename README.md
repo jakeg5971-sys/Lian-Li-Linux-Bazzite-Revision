@@ -89,8 +89,10 @@ distrobox enter lianli-build
 ```bash
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg git
+  mesa-libGL-devel mesa-libEGL-devel systemd-devel clang cmake pkg-config ffmpeg git
 ```
+If `cargo build ...` fails with `failed to run custom build command for 'hidapi'`, make sure
+`systemd-devel` is installed in the Distrobox and retry.
 
 3) Build in the Distrobox (from the **repo root**, not inside `crates/...`):
 ```bash
@@ -148,7 +150,7 @@ sudo apt install libhidapi-dev libusb-1.0-0-dev libudev-dev libfontconfig-dev \
 # Fedora
 sudo dnf install hidapi-devel libusb1-devel fontconfig-devel \
   libxkbcommon-devel wayland-devel libX11-devel libinput-devel libdrm-devel \
-  mesa-libGL-devel mesa-libEGL-devel clang cmake pkg-config ffmpeg
+  mesa-libGL-devel mesa-libEGL-devel systemd-devel clang cmake pkg-config ffmpeg
 ```
 
 3) Build:
