@@ -51,6 +51,16 @@ git pull
 ./scripts/fedora-atomic-bootstrap.sh
 ```
 
+## Uninstall
+
+From the repo root:
+
+```bash
+./scripts/uninstall-all-versions.sh --remove-udev --remove-toolbox --purge-config
+```
+
+This removes user binaries/integration files and can also remove Atomic-specific udev/toolbox/config artifacts.
+
 ## Verifying Everything Works
 
 ```bash

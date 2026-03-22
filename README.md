@@ -184,6 +184,21 @@ docker run --rm -it \
 
 Then follow steps 4-6 from "From Source" above.
 
+### Uninstall (All Installation Variants)
+
+To remove user-level installs (including older naming variants), run:
+
+```bash
+./scripts/uninstall-all-versions.sh
+```
+
+Optional flags:
+
+- `--purge-config` removes `~/.config/lianli` and `~/.cache/lianli`
+- `--remove-udev` removes `/etc/udev/rules.d/99-lianli.rules`
+- `--remove-toolbox` removes the Fedora Atomic toolbox container (`$CONTAINER_NAME`, default `lianli-linux-builder`)
+- `--remove-packages` attempts package removal via `pacman` / `dnf`
+
 ## Configuration
 
 The daemon reads `~/.config/lianli/config.json`. The GUI edits this file via the daemon's IPC socket.
